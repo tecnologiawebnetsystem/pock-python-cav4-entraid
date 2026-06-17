@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from ca_client import CAUserClient
 from config import get_settings
 from errors import AppError, ErrorCategory
+from graph_client import GraphClient
 from oidc import get_oidc_client
 from session import PendingLogin, pending_store
 
@@ -72,6 +73,20 @@ CAV4_CONSULTAS: list[dict] = [
         "path": "/api/admin/users/{userLogin}/roles",
         "titulo": "PAPEIS (Roles via Admin)",
         "descricao": "Lista os papéis/perfis do usuário (GET, sem corpo).",
+    },
+    {
+        "label": "graph_me",
+        "method": "GET",
+        "path": "https://graph.microsoft.com/v1.0/me",
+        "titulo": "PERFIL ENTRA ID (Microsoft Graph /me)",
+        "descricao": "Perfil completo do usuário no Entra ID: cargo, departamento, empresa, telefone, etc.",
+    },
+    {
+        "label": "graph_manager",
+        "method": "GET",
+        "path": "https://graph.microsoft.com/v1.0/me/manager",
+        "titulo": "GERENTE/SUPERVISOR (Microsoft Graph /me/manager)",
+        "descricao": "Gerente/supervisor direto do usuário, conforme cadastrado no Entra ID.",
     },
 ]
 
@@ -281,6 +296,7 @@ async def _consultar_cav4(access_token: str, user_login: str) -> dict:
           "data": <resposta> }   # ou "error": <erro categorizado> se falhar
     """
     ca = CAUserClient(access_token)
+    graph = GraphClient(access_token)
     info: dict = {"userLogin": user_login}
 
     # Rótulo -> função do client que faz a chamada (segue a ordem do catálogo).
@@ -290,6 +306,8 @@ async def _consultar_cav4(access_token: str, user_login: str) -> dict:
         "admin_user_details": ca.admin_user_details(user_login),
         "admin_enterprise_groups": ca.admin_enterprise_groups(user_login),
         "admin_roles": ca.admin_roles(user_login),
+        "graph_me": graph.me(),
+        "graph_manager": graph.me_manager(),
     }
 
     for consulta in CAV4_CONSULTAS:

@@ -41,7 +41,13 @@ class Settings:
     # URI de callback registrada no CA (ex.: https://app.../auth/entra-callback)
     CA_REDIRECT_URI: str | None = _get("CA_REDIRECT_URI")
     # Scopes do OIDC. A app registrou "openid" e "profile".
-    CA_SCOPES: str = _get("CA_SCOPES", "openid profile") or "openid profile"
+    # Inclui "User.Read" para viabilizar a consulta ao Microsoft Graph (/me).
+    # Se o CA nao emitir token para o Graph, a consulta #6 mostra o erro sem
+    # quebrar o restante (ela e resiliente).
+    CA_SCOPES: str = _get("CA_SCOPES", "openid profile User.Read") or "openid profile User.Read"
+
+    # Base do Microsoft Graph (perfil completo do Entra ID: cargo, depto, gerente...).
+    GRAPH_API_BASE_URL: str = _get("GRAPH_API_BASE_URL", "https://graph.microsoft.com/v1.0") or "https://graph.microsoft.com/v1.0"
 
     # -- Endpoints OIDC do fwca-authz --------------------------------------
     # Caminho preferido: informar só o documento de discovery e deixar o BFF
