@@ -9,8 +9,9 @@ Endpoints usados nesta POC:
     GET  /api/users/{userLogin}/user-groups
     GET  /api/users/{userLogin}/information-values
   Admin API (GET, sem corpo):
-    GET  /api/admin/users/{userLogin}                 (detalhes do usuário/supervisor)
-    GET  /api/admin/users/{userLogin}/roles           (papéis do usuário)
+    GET  /api/admin/users/{userLogin}                    (detalhes do usuário/supervisor)
+    GET  /api/admin/users/{userLogin}/enterprise-groups  (enterprise groups)
+    GET  /api/admin/users/{userLogin}/roles              (papéis do usuário)
 """
 
 from __future__ import annotations
@@ -131,6 +132,10 @@ class CAUserClient:
         # GET: "Detalhes de Usuário" — costuma trazer dados cadastrais
         # (lotação, gerente/supervisor, empresa, etc.).
         return await self._get(f"/api/admin/users/{self._enc(user_login)}")
+
+    async def admin_enterprise_groups(self, user_login: str) -> Any:
+        # GET: "Listar Enterprise Groups de Usuário" (Admin).
+        return await self._get(f"/api/admin/users/{self._enc(user_login)}/enterprise-groups")
 
     async def admin_roles(self, user_login: str) -> Any:
         # GET: "Listar Papéis de Usuário" (GET, sem corpo).

@@ -60,6 +60,13 @@ CAV4_CONSULTAS: list[dict] = [
         "descricao": "Dados cadastrais do usuário (lotação, gerente/supervisor, empresa, etc.).",
     },
     {
+        "label": "admin_enterprise_groups",
+        "method": "GET",
+        "path": "/api/admin/users/{userLogin}/enterprise-groups",
+        "titulo": "ENTERPRISE GROUPS (Admin)",
+        "descricao": "Grupos corporativos (empresa) do usuário, via Admin API.",
+    },
+    {
         "label": "admin_roles",
         "method": "GET",
         "path": "/api/admin/users/{userLogin}/roles",
@@ -281,6 +288,7 @@ async def _consultar_cav4(access_token: str, user_login: str) -> dict:
         "user_groups": ca.user_groups(user_login),
         "information_values": ca.information_values(user_login),
         "admin_user_details": ca.admin_user_details(user_login),
+        "admin_enterprise_groups": ca.admin_enterprise_groups(user_login),
         "admin_roles": ca.admin_roles(user_login),
     }
 
