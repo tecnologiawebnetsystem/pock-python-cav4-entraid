@@ -31,6 +31,51 @@ logger = logging.getLogger("ca.auth")
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
 
 
+# Catálogo das consultas feitas ao CAv4. Centraliza, para cada rótulo:
+#   - method     : método HTTP usado (GET/POST)
+#   - path       : caminho do endpoint (com {userLogin} a ser substituído)
+#   - titulo     : nome amigável, fácil de ler na tela
+#   - descricao  : o que aquela API retorna, em português
+# A ORDEM aqui é a ordem em que as consultas rodam e aparecem na tela.
+CAV4_CONSULTAS: list[dict] = [
+    {
+        "label": "resources",
+        "method": "GET",
+        "path": "/api/users/{userLogin}/resources",
+        "titulo": "RECURSOS (Resources)",
+        "descricao": "Todos os recursos/sistemas que o usuário pode acessar.",
+    },
+    {
+        "label": "enterprise_groups",
+        "method": "GET",
+        "path": "/api/users/{userLogin}/enterprise-groups",
+        "titulo": "GRUPOS CORPORATIVOS (Enterprise Groups)",
+        "descricao": "Grupos corporativos (empresa) aos quais o usuário pertence.",
+    },
+    {
+        "label": "user_groups",
+        "method": "GET",
+        "path": "/api/users/{userLogin}/user-groups",
+        "titulo": "GRUPOS DE USUARIO (User Groups)",
+        "descricao": "Grupos de usuário aos quais a pessoa está associada.",
+    },
+    {
+        "label": "information_values",
+        "method": "GET",
+        "path": "/api/users/{userLogin}/information-values",
+        "titulo": "VALORES DE INFORMACAO (Information Values)",
+        "descricao": "Valores de informação autorizados ao usuário.",
+    },
+    {
+        "label": "roles_contexts",
+        "method": "POST",
+        "path": "/api/users/{userLogin}/roles/contexts/list",
+        "titulo": "PAPEIS (Roles)",
+        "descricao": "Todos os papéis/perfis do usuário (corpo = lista de contextos; vazia = todos).",
+    },
+]
+
+
 def _extract_user_login(claims: dict) -> str | None:
     """
     Extrai o 'userLogin' (chave da User API do CA) das claims do Entra.
@@ -193,7 +238,6 @@ def _imprimir_no_terminal(payload: dict) -> None:
     else:
         print("  (nenhuma claim retornada)", flush=True)
 
-    # --- Resultado da consulta CAv4 (resources/grupos/etc.) --------------
     # --- Resultado da consulta CAv4 (uma secao bem clara por API) --------
     print("\n" + linha, flush=True)
     print("  CAv4 — RESULTADO POR API (User API)", flush=True)
@@ -230,40 +274,40 @@ async def _consultar_cav4(access_token: str, user_login: str) -> dict:
     """
     Consulta a alocação/recursos do usuário no CAv4. Resiliente a falhas.
 
-    Cada campo do resultado deixa CLARO de qual endpoint veio, no formato:
-        { "endpoint": "/api/users/{userLogin}/...", "ok": true|false,
-          "data": <resposta> }    # ou "error": <erro categorizado> em caso de falha
+    Cada campo do resultado deixa CLARO de qual API veio, no formato:
+        { "endpoint": "GET /api/users/{userLogin}/...",
+          "titulo": "RECURSOS (Resources)",
+          "descricao": "...",
+          "ok": true|false,
+          "data": <resposta> }   # ou "error": <erro categorizado> se falhar
     """
     ca = CAUserClient(access_token)
     info: dict = {"userLogin": user_login}
 
-    # Rótulo -> caminho real do endpoint (já com o userLogin resolvido).
-    endpoints = {
-        "resources": f"/api/users/{user_login}/resources",
-        "enterprise_groups": f"/api/users/{user_login}/enterprise-groups",
-        "user_groups": f"/api/users/{user_login}/user-groups",
-        "information_values": f"/api/users/{user_login}/information-values",
-        "roles_contexts": f"/api/users/{user_login}/roles/contexts/list",
+    # Rótulo -> função do client que faz a chamada (segue a ordem do catálogo).
+    chamadas = {
+        "resources": ca.resources(user_login),
+        "enterprise_groups": ca.enterprise_groups(user_login),
+        "user_groups": ca.user_groups(user_login),
+        "information_values": ca.information_values(user_login),
+        "roles_contexts": ca.roles_contexts(user_login),
     }
 
-    async def _try(label: str, coro):
-        endpoint = endpoints[label]
+    for consulta in CAV4_CONSULTAS:
+        label = consulta["label"]
+        # Endpoint legível: método + caminho real (com o userLogin resolvido).
+        endpoint = f"{consulta['method']} {consulta['path'].format(userLogin=user_login)}"
+        base = {
+            "endpoint": endpoint,
+            "titulo": consulta["titulo"],
+            "descricao": consulta["descricao"],
+        }
         try:
-            info[label] = {"endpoint": endpoint, "ok": True, "data": await coro}
+            info[label] = {**base, "ok": True, "data": await chamadas[label]}
         except AppError as exc:
             # Não derruba a consulta inteira: registra o erro categorizado por campo.
-            info[label] = {
-                "endpoint": endpoint,
-                "ok": False,
-                "error": exc.to_dict()["error"],
-            }
+            info[label] = {**base, "ok": False, "error": exc.to_dict()["error"]}
             logger.warning("[v0] CAv4 %s (%s) falhou — %s", label, endpoint, exc.log_line())
-
-    await _try("resources", ca.resources(user_login))
-    await _try("enterprise_groups", ca.enterprise_groups(user_login))
-    await _try("user_groups", ca.user_groups(user_login))
-    await _try("information_values", ca.information_values(user_login))
-    await _try("roles_contexts", ca.roles_contexts(user_login))
 
     # "alocado" = a consulta de resources foi OK e retornou ao menos um item.
     resources_entry = info.get("resources", {})
