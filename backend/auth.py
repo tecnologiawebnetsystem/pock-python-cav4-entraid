@@ -194,14 +194,23 @@ def _imprimir_no_terminal(payload: dict) -> None:
         print("  (nenhuma claim retornada)", flush=True)
 
     # --- Resultado da consulta CAv4 (resources/grupos/etc.) --------------
-    print("\n[ CAv4 — RESULTADO DA CONSULTA (User API) ]", flush=True)
-    print(f"  alocado   : {ca.get('alocado')}", flush=True)
-    for campo in ("resources", "enterprise_groups", "user_groups", "information_values", "roles_contexts"):
-        entry = ca.get(campo) or {}
-        endpoint = entry.get("endpoint", "(desconhecido)")
+    # --- Resultado da consulta CAv4 (uma secao bem clara por API) --------
+    print("\n" + linha, flush=True)
+    print("  CAv4 — RESULTADO POR API (User API)", flush=True)
+    print(f"  alocado (tem algum recurso?): {ca.get('alocado')}", flush=True)
+    print(linha, flush=True)
+
+    sub = "-" * 78
+    for indice, consulta in enumerate(CAV4_CONSULTAS, start=1):
+        entry = ca.get(consulta["label"]) or {}
+        endpoint = entry.get("endpoint", f"{consulta['method']} {consulta['path']}")
         status = "OK" if entry.get("ok") else "FALHA"
-        # Deixa CLARO o rótulo, o status e o endpoint exato de origem.
-        print(f"\n  -> [{status}] {campo}  ({endpoint})", flush=True)
+        # Cabecalho destacado: numero, titulo amigavel, status, endpoint e descricao.
+        print("\n" + sub, flush=True)
+        print(f"  API #{indice}: {consulta['titulo']}   [{status}]", flush=True)
+        print(f"  Endpoint : {endpoint}", flush=True)
+        print(f"  O que e  : {consulta['descricao']}", flush=True)
+        print(sub, flush=True)
         valor = entry.get("data") if entry.get("ok") else entry.get("error")
         print(_indentar(json.dumps(valor, indent=2, ensure_ascii=False, default=str)), flush=True)
 
