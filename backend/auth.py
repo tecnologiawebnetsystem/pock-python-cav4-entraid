@@ -39,20 +39,6 @@ router = APIRouter(prefix="/auth", tags=["Autenticação"])
 # A ORDEM aqui é a ordem em que as consultas rodam e aparecem na tela.
 CAV4_CONSULTAS: list[dict] = [
     {
-        "label": "resources",
-        "method": "GET",
-        "path": "/api/users/{userLogin}/resources",
-        "titulo": "RECURSOS (Resources)",
-        "descricao": "Todos os recursos/sistemas que o usuário pode acessar.",
-    },
-    {
-        "label": "enterprise_groups",
-        "method": "GET",
-        "path": "/api/users/{userLogin}/enterprise-groups",
-        "titulo": "GRUPOS CORPORATIVOS (Enterprise Groups)",
-        "descricao": "Grupos corporativos (empresa) aos quais o usuário pertence.",
-    },
-    {
         "label": "user_groups",
         "method": "GET",
         "path": "/api/users/{userLogin}/user-groups",
@@ -65,13 +51,6 @@ CAV4_CONSULTAS: list[dict] = [
         "path": "/api/users/{userLogin}/information-values",
         "titulo": "VALORES DE INFORMACAO (Information Values)",
         "descricao": "Valores de informação autorizados ao usuário.",
-    },
-    {
-        "label": "roles_contexts",
-        "method": "POST",
-        "path": "/api/users/{userLogin}/roles/contexts/list",
-        "titulo": "PAPEIS (Roles via User API)",
-        "descricao": "Papéis do usuário pela User API (corpo = lista de contextos; vazia = todos).",
     },
     {
         "label": "admin_user_details",
@@ -254,8 +233,7 @@ def _imprimir_no_terminal(payload: dict) -> None:
 
     # --- Resultado da consulta CAv4 (uma secao bem clara por API) --------
     print("\n" + linha, flush=True)
-    print("  CAv4 — RESULTADO POR API (User API)", flush=True)
-    print(f"  alocado (tem algum recurso?): {ca.get('alocado')}", flush=True)
+    print("  CAv4 — RESULTADO POR API", flush=True)
     print(linha, flush=True)
 
     sub = "-" * 78
@@ -300,11 +278,8 @@ async def _consultar_cav4(access_token: str, user_login: str) -> dict:
 
     # Rótulo -> função do client que faz a chamada (segue a ordem do catálogo).
     chamadas = {
-        "resources": ca.resources(user_login),
-        "enterprise_groups": ca.enterprise_groups(user_login),
         "user_groups": ca.user_groups(user_login),
         "information_values": ca.information_values(user_login),
-        "roles_contexts": ca.roles_contexts(user_login),
         "admin_user_details": ca.admin_user_details(user_login),
         "admin_roles": ca.admin_roles(user_login),
     }
@@ -325,8 +300,4 @@ async def _consultar_cav4(access_token: str, user_login: str) -> dict:
             info[label] = {**base, "ok": False, "error": exc.to_dict()["error"]}
             logger.warning("[v0] CAv4 %s (%s) falhou — %s", label, endpoint, exc.log_line())
 
-    # "alocado" = a consulta de resources foi OK e retornou ao menos um item.
-    resources_entry = info.get("resources", {})
-    resources_data = resources_entry.get("data") if resources_entry.get("ok") else None
-    info["alocado"] = bool(resources_data)
     return info
