@@ -1,10 +1,10 @@
 """
-POC Python — FastAPI
+POC Python — FastAPI (somente backend)
 Ponto de entrada principal da API.
 
-Fluxo único: o frontend tem um botão "Conectar" que chama /auth/login;
-o CA autentica no Entra e o /auth/entra-callback retorna, num único JSON,
-todas as informações do usuário (Entra + CAv4).
+Fluxo único: acesse /auth/login no navegador; o CA autentica no Entra e o
+/auth/entra-callback imprime no TERMINAL (tela preta) todas as informações que
+o CAv4 conseguiu obter do usuário (Entra + CAv4), retornando também um JSON.
 """
 
 import logging
@@ -46,17 +46,17 @@ app = fastapi.FastAPI(
     version="0.1.0",
 )
 
-# CORS: origem do frontend (separado por vírgula em CORS_ALLOW_ORIGINS).
-# Em dev, cai para localhost:3000.
+# CORS: opcional. Como o projeto é só backend (sem frontend chamando via
+# navegador), o CORS só importa se algum cliente web externo for consumir a API.
+# Defina origens em CORS_ALLOW_ORIGINS (separadas por vírgula); o padrão é "*".
 _origins_env = os.getenv("CORS_ALLOW_ORIGINS", "")
-_allow_origins = [o.strip() for o in _origins_env.split(",") if o.strip()] or [
-    "http://localhost:3000",
-]
+_allow_origins = [o.strip() for o in _origins_env.split(",") if o.strip()] or ["*"]
 
 app.add_middleware(
     fastapi.middleware.cors.CORSMiddleware,
     allow_origins=_allow_origins,
-    allow_credentials=True,
+    # Sem cookies/sessão no navegador; com origem "*" o CORS exige credentials=False.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
