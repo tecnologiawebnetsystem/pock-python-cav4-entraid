@@ -73,12 +73,23 @@ class GraphClient:
             return self._token
 
         if not (self.tenant_id and self.client_id and self.client_secret):
+            faltando = []
+            if not self.tenant_id:
+                faltando.append("GRAPH_TENANT_ID")
+            if not self.client_id:
+                faltando.append("GRAPH_CLIENT_ID (ou CA_CLIENT_ID)")
+            if not self.client_secret:
+                faltando.append("GRAPH_CLIENT_SECRET (ou CA_CLIENT_SECRET)")
             raise AppError(
                 category=ErrorCategory.CONFIG,
                 code="GRAPH_NOT_CONFIGURED",
-                message="Acesso independente ao Graph nao configurado.",
-                cause="Faltam GRAPH_TENANT_ID, GRAPH_CLIENT_ID e/ou GRAPH_CLIENT_SECRET no .env.",
-                resolution="Preencha as 3 variaveis GRAPH_* com os dados da app registration do Entra.",
+                message="Acesso ao Graph (Entra) nao configurado.",
+                cause=f"Faltam no .env: {', '.join(faltando)}.",
+                resolution=(
+                    "Informe GRAPH_TENANT_ID. As credenciais podem ser as da app do "
+                    "login (CA_CLIENT_ID/CA_CLIENT_SECRET) se ela tiver permissao de "
+                    "aplicacao no Graph; senao, preencha GRAPH_CLIENT_ID/GRAPH_CLIENT_SECRET."
+                ),
                 detail="missing_graph_credentials",
                 http_status=503,
             )

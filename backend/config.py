@@ -44,13 +44,18 @@ class Settings:
     CA_SCOPES: str = _get("CA_SCOPES", "openid profile") or "openid profile"
 
     # -- Microsoft Graph (acesso INDEPENDENTE do CAv4) ---------------------
-    # Estas credenciais sao de uma app registration PROPRIA no Entra ID, com
-    # permissao de APLICACAO (app-only / client credentials). NAO reutilizam o
-    # token do CAv4 — o backend pega seu proprio token direto no Entra e consulta
-    # o Microsoft Graph. Permissao recomendada: User.Read.All (Application).
+    # Estas credenciais sao de uma app registration no Entra ID, com permissao
+    # de APLICACAO (app-only / client credentials). O backend pega seu proprio
+    # token direto no Entra e consulta o Microsoft Graph.
+    #
+    # FALLBACK: se GRAPH_CLIENT_ID/GRAPH_CLIENT_SECRET nao forem informados,
+    # reutilizamos CA_CLIENT_ID/CA_CLIENT_SECRET (a app do login). Isso funciona
+    # SE a app do login estiver registrada no mesmo Entra e tiver as permissoes
+    # de aplicacao (User.Read.All / GroupMember.Read.All) com admin consent.
+    # Nesse caso, basta informar GRAPH_TENANT_ID.
     GRAPH_TENANT_ID: str | None = _get("GRAPH_TENANT_ID")
-    GRAPH_CLIENT_ID: str | None = _get("GRAPH_CLIENT_ID")
-    GRAPH_CLIENT_SECRET: str | None = _get("GRAPH_CLIENT_SECRET")
+    GRAPH_CLIENT_ID: str | None = _get("GRAPH_CLIENT_ID") or _get("CA_CLIENT_ID")
+    GRAPH_CLIENT_SECRET: str | None = _get("GRAPH_CLIENT_SECRET") or _get("CA_CLIENT_SECRET")
     # Base do Microsoft Graph (perfil completo do Entra ID: cargo, depto, gerente...).
     GRAPH_API_BASE_URL: str = _get("GRAPH_API_BASE_URL", "https://graph.microsoft.com/v1.0") or "https://graph.microsoft.com/v1.0"
     # Authority do Entra para obter o token (client credentials).
