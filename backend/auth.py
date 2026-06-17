@@ -194,11 +194,24 @@ def _imprimir_no_terminal(payload: dict) -> None:
         print("  (nenhuma claim retornada)", flush=True)
 
     # --- Resultado da consulta CAv4 (resources/grupos/etc.) --------------
-    print("\n[ CAv4 — RESULTADO DA CONSULTA (User API) ]", flush=True)
-    print(f"  alocado   : {ca.get('alocado')}", flush=True)
-    for campo in ("resources", "enterprise_groups", "user_groups", "information_values"):
-        print(f"\n  -> {campo}:", flush=True)
-        valor = ca.get(campo)
+    # --- Resultado da consulta CAv4 (uma secao bem clara por API) --------
+    print("\n" + linha, flush=True)
+    print("  CAv4 — RESULTADO POR API (User API)", flush=True)
+    print(f"  alocado (tem algum recurso?): {ca.get('alocado')}", flush=True)
+    print(linha, flush=True)
+
+    sub = "-" * 78
+    for indice, consulta in enumerate(CAV4_CONSULTAS, start=1):
+        entry = ca.get(consulta["label"]) or {}
+        endpoint = entry.get("endpoint", f"{consulta['method']} {consulta['path']}")
+        status = "OK" if entry.get("ok") else "FALHA"
+        # Cabecalho destacado: numero, titulo amigavel, status, endpoint e descricao.
+        print("\n" + sub, flush=True)
+        print(f"  API #{indice}: {consulta['titulo']}   [{status}]", flush=True)
+        print(f"  Endpoint : {endpoint}", flush=True)
+        print(f"  O que e  : {consulta['descricao']}", flush=True)
+        print(sub, flush=True)
+        valor = entry.get("data") if entry.get("ok") else entry.get("error")
         print(_indentar(json.dumps(valor, indent=2, ensure_ascii=False, default=str)), flush=True)
 
     # --- JSON completo (igual ao retornado na resposta HTTP) -------------
@@ -214,24 +227,46 @@ def _indentar(texto: str, espacos: int = 5) -> str:
 
 
 async def _consultar_cav4(access_token: str, user_login: str) -> dict:
-    """Consulta a alocação/recursos do usuário no CAv4. Resiliente a falhas."""
+    """
+    Consulta a alocação/recursos do usuário no CAv4. Resiliente a falhas.
+
+    Cada campo do resultado deixa CLARO de qual endpoint veio, no formato:
+        { "endpoint": "/api/users/{userLogin}/...", "ok": true|false,
+          "data": <resposta> }    # ou "error": <erro categorizado> em caso de falha
+    """
     ca = CAUserClient(access_token)
     info: dict = {"userLogin": user_login}
 
+    # Rótulo -> caminho real do endpoint (já com o userLogin resolvido).
+    endpoints = {
+        "resources": f"/api/users/{user_login}/resources",
+        "enterprise_groups": f"/api/users/{user_login}/enterprise-groups",
+        "user_groups": f"/api/users/{user_login}/user-groups",
+        "information_values": f"/api/users/{user_login}/information-values",
+        "roles_contexts": f"/api/users/{user_login}/roles/contexts/list",
+    }
+
     async def _try(label: str, coro):
+        endpoint = endpoints[label]
         try:
-            info[label] = await coro
+            info[label] = {"endpoint": endpoint, "ok": True, "data": await coro}
         except AppError as exc:
             # Não derruba a consulta inteira: registra o erro categorizado por campo.
-            info[label] = exc.to_dict()["error"]
-            logger.warning("[v0] CAv4 %s falhou — %s", label, exc.log_line())
+            info[label] = {
+                "endpoint": endpoint,
+                "ok": False,
+                "error": exc.to_dict()["error"],
+            }
+            logger.warning("[v0] CAv4 %s (%s) falhou — %s", label, endpoint, exc.log_line())
 
     await _try("resources", ca.resources(user_login))
     await _try("enterprise_groups", ca.enterprise_groups(user_login))
     await _try("user_groups", ca.user_groups(user_login))
     await _try("information_values", ca.information_values(user_login))
+    await _try("roles_contexts", ca.roles_contexts(user_login))
 
-    # "alocado" = possui ao menos um recurso autorizado
-    resources = info.get("resources")
-    info["alocado"] = bool(resources) and not isinstance(resources, dict)
+    # "alocado" = a consulta de resources foi OK e retornou ao menos um item.
+    resources_entry = info.get("resources", {})
+    resources_data = resources_entry.get("data") if resources_entry.get("ok") else None
+    info["alocado"] = bool(resources_data)
     return info
