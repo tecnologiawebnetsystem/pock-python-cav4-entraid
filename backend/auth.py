@@ -32,11 +32,24 @@ router = APIRouter(prefix="/auth", tags=["Autenticação"])
 
 
 def _extract_user_login(claims: dict) -> str | None:
-    """Extrai o 'userLogin' (chave da User API do CA) das claims do Entra."""
-    for key in ("preferred_username", "upn", "sub", "login", "samaccountname", "email"):
+    """
+    Extrai o 'userLogin' (chave da User API do CA) das claims do Entra.
+
+    IMPORTANTE: o CAv4 identifica o usuário pela CHAVE/matrícula (ex.: "GFZ3"),
+    NÃO pelo e-mail. O Entra entrega essa chave na claim 'user_login'. Por isso
+    ela é a primeira a ser tentada; o e-mail/upn ficam só como último recurso.
+    """
+    # Claims que costumam conter a chave do CA (matrícula), em ordem de preferência.
+    for key in ("user_login", "login", "samaccountname", "onpremisesamaccountname"):
         value = claims.get(key)
         if value:
-            return str(value).split("@")[0] if key in ("upn", "email") else str(value)
+            return str(value)
+
+    # Fallback: deriva da parte local do e-mail/upn (pode não bater no CA).
+    for key in ("preferred_username", "upn", "email", "sub"):
+        value = claims.get(key)
+        if value:
+            return str(value).split("@")[0]
     return None
 
 
