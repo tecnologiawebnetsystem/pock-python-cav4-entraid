@@ -1,18 +1,19 @@
 """
-Autenticação — fluxo único e simples.
+Autenticação — fluxo único e simples (somente backend).
 
-  GET /api/auth/login           -> redireciona o browser para o CA (Entra)
-  GET /api/auth/entra-callback  -> recebe o code, troca por tokens, lê as
-                                   informações do Entra E consulta o CAv4
-                                   (alocação/recursos), retornando TUDO num
-                                   único JSON.
+  GET /auth/login           -> redireciona o browser para o CA (Entra)
+  GET /auth/entra-callback  -> recebe o code, troca por tokens, lê as
+                               informações do Entra E consulta o CAv4
+                               (alocação/recursos), imprimindo TUDO no
+                               terminal e retornando também num único JSON.
 
-Sem cookie/sessão: o objetivo é, ao conectar, ver num único response as
-informações do usuário (Entra + CA).
+Sem cookie/sessão e sem frontend: o objetivo é, ao conectar, ver no terminal
+(tela preta) todas as informações que o CAv4 conseguiu obter do Entra.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import secrets
 
@@ -133,18 +134,70 @@ async def entra_callback(
     if access_token and user_login:
         ca_info = await _consultar_cav4(access_token, user_login)
 
-    return JSONResponse(
-        {
-            "status": "ok",
-            "entra": {
-                "userLogin": user_login,
-                "name": claims.get("name"),
-                "email": claims.get("email") or claims.get("upn"),
-                "claims": claims,
-            },
-            "ca": ca_info,
-        }
-    )
+    payload = {
+        "status": "ok",
+        "entra": {
+            "userLogin": user_login,
+            "name": claims.get("name"),
+            "email": claims.get("email") or claims.get("upn"),
+            "claims": claims,
+        },
+        "ca": ca_info,
+    }
+
+    # Imprime TUDO que o CAv4 recebeu do Entra no terminal (tela preta).
+    _imprimir_no_terminal(payload)
+
+    return JSONResponse(payload)
+
+
+def _imprimir_no_terminal(payload: dict) -> None:
+    """
+    Despeja no terminal (stdout), de forma legível, TODAS as informações que o
+    CAv4 conseguiu obter do Entra e da própria User API do CA. Como este projeto
+    é só backend, o terminal é a "tela" onde o resultado do login é exibido.
+    """
+    entra = payload.get("entra", {})
+    ca = payload.get("ca", {})
+    claims = entra.get("claims", {}) or {}
+
+    linha = "=" * 78
+    print("\n" + linha, flush=True)
+    print("  LOGIN CONCLUIDO — INFORMACOES RECEBIDAS DO ENTRA (via CAv4)", flush=True)
+    print(linha, flush=True)
+
+    # --- Identificacao basica do usuario (Entra) -------------------------
+    print("\n[ ENTRA — IDENTIDADE ]", flush=True)
+    print(f"  userLogin : {entra.get('userLogin')}", flush=True)
+    print(f"  nome      : {entra.get('name')}", flush=True)
+    print(f"  email     : {entra.get('email')}", flush=True)
+
+    # --- Todas as claims do id_token (cru, completo) ---------------------
+    print("\n[ ENTRA — CLAIMS COMPLETAS DO id_token ]", flush=True)
+    if claims:
+        for chave in sorted(claims.keys()):
+            print(f"  {chave:24} = {claims[chave]}", flush=True)
+    else:
+        print("  (nenhuma claim retornada)", flush=True)
+
+    # --- Resultado da consulta CAv4 (resources/grupos/etc.) --------------
+    print("\n[ CAv4 — RESULTADO DA CONSULTA (User API) ]", flush=True)
+    print(f"  alocado   : {ca.get('alocado')}", flush=True)
+    for campo in ("resources", "enterprise_groups", "user_groups", "information_values"):
+        print(f"\n  -> {campo}:", flush=True)
+        valor = ca.get(campo)
+        print(_indentar(json.dumps(valor, indent=2, ensure_ascii=False, default=str)), flush=True)
+
+    # --- JSON completo (igual ao retornado na resposta HTTP) -------------
+    print("\n[ JSON COMPLETO DA RESPOSTA ]", flush=True)
+    print(json.dumps(payload, indent=2, ensure_ascii=False, default=str), flush=True)
+    print("\n" + linha + "\n", flush=True)
+
+
+def _indentar(texto: str, espacos: int = 5) -> str:
+    """Aplica indentacao a cada linha de um bloco de texto (para alinhar no log)."""
+    prefixo = " " * espacos
+    return "\n".join(prefixo + linha for linha in texto.splitlines())
 
 
 async def _consultar_cav4(access_token: str, user_login: str) -> dict:
