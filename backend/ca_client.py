@@ -9,6 +9,7 @@ Endpoints usados nesta POC (User API):
   GET /api/users/{userLogin}/user-groups
   GET /api/users/{userLogin}/resources
   GET /api/users/{userLogin}/information-values
+  GET /api/users/{userLogin}/roles/contexts/list
 """
 
 from __future__ import annotations
@@ -130,3 +131,7 @@ class CAUserClient:
     # -- Information Values ------------------------------------------------
     async def information_values(self, user_login: str) -> Any:
         return await self._get(f"/api/users/{self._enc(user_login)}/information-values")
+
+    # -- Roles (contextos) -------------------------------------------------
+    async def roles_contexts(self, user_login: str) -> Any:
+        return await self._get(f"/api/users/{self._enc(user_login)}/roles/contexts/list")

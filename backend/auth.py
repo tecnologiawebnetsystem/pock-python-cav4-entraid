@@ -196,7 +196,7 @@ def _imprimir_no_terminal(payload: dict) -> None:
     # --- Resultado da consulta CAv4 (resources/grupos/etc.) --------------
     print("\n[ CAv4 — RESULTADO DA CONSULTA (User API) ]", flush=True)
     print(f"  alocado   : {ca.get('alocado')}", flush=True)
-    for campo in ("resources", "enterprise_groups", "user_groups", "information_values"):
+    for campo in ("resources", "enterprise_groups", "user_groups", "information_values", "roles_contexts"):
         print(f"\n  -> {campo}:", flush=True)
         valor = ca.get(campo)
         print(_indentar(json.dumps(valor, indent=2, ensure_ascii=False, default=str)), flush=True)
@@ -230,6 +230,7 @@ async def _consultar_cav4(access_token: str, user_login: str) -> dict:
     await _try("enterprise_groups", ca.enterprise_groups(user_login))
     await _try("user_groups", ca.user_groups(user_login))
     await _try("information_values", ca.information_values(user_login))
+    await _try("roles_contexts", ca.roles_contexts(user_login))
 
     # "alocado" = possui ao menos um recurso autorizado
     resources = info.get("resources")
