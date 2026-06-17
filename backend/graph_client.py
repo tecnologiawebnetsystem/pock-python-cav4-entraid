@@ -75,20 +75,19 @@ class GraphClient:
         if not (self.tenant_id and self.client_id and self.client_secret):
             faltando = []
             if not self.tenant_id:
-                faltando.append("GRAPH_TENANT_ID")
+                faltando.append("ENTRA_TENANT_ID (ou GRAPH_TENANT_ID)")
             if not self.client_id:
-                faltando.append("GRAPH_CLIENT_ID (ou CA_CLIENT_ID)")
+                faltando.append("ENTRA_CLIENT_ID (ou GRAPH_CLIENT_ID / CA_CLIENT_ID)")
             if not self.client_secret:
-                faltando.append("GRAPH_CLIENT_SECRET (ou CA_CLIENT_SECRET)")
+                faltando.append("ENTRA_CLIENT_SECRET (ou GRAPH_CLIENT_SECRET / CA_CLIENT_SECRET)")
             raise AppError(
                 category=ErrorCategory.CONFIG,
                 code="GRAPH_NOT_CONFIGURED",
                 message="Acesso ao Graph (Entra) nao configurado.",
                 cause=f"Faltam no .env: {', '.join(faltando)}.",
                 resolution=(
-                    "Informe GRAPH_TENANT_ID. As credenciais podem ser as da app do "
-                    "login (CA_CLIENT_ID/CA_CLIENT_SECRET) se ela tiver permissao de "
-                    "aplicacao no Graph; senao, preencha GRAPH_CLIENT_ID/GRAPH_CLIENT_SECRET."
+                    "Preencha as credenciais da app do Entra: ENTRA_TENANT_ID, "
+                    "ENTRA_CLIENT_ID e ENTRA_CLIENT_SECRET."
                 ),
                 detail="missing_graph_credentials",
                 http_status=503,

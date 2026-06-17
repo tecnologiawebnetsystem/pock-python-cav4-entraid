@@ -48,14 +48,15 @@ class Settings:
     # de APLICACAO (app-only / client credentials). O backend pega seu proprio
     # token direto no Entra e consulta o Microsoft Graph.
     #
-    # FALLBACK: se GRAPH_CLIENT_ID/GRAPH_CLIENT_SECRET nao forem informados,
-    # reutilizamos CA_CLIENT_ID/CA_CLIENT_SECRET (a app do login). Isso funciona
-    # SE a app do login estiver registrada no mesmo Entra e tiver as permissoes
-    # de aplicacao (User.Read.All / GroupMember.Read.All) com admin consent.
-    # Nesse caso, basta informar GRAPH_TENANT_ID.
-    GRAPH_TENANT_ID: str | None = _get("GRAPH_TENANT_ID")
-    GRAPH_CLIENT_ID: str | None = _get("GRAPH_CLIENT_ID") or _get("CA_CLIENT_ID")
-    GRAPH_CLIENT_SECRET: str | None = _get("GRAPH_CLIENT_SECRET") or _get("CA_CLIENT_SECRET")
+    # ORDEM DE BUSCA das credenciais (primeira preenchida vence):
+    #   1) GRAPH_*  (nomes especificos deste backend)
+    #   2) ENTRA_*  (nomes da app registration do Entra: ENTRA_TENANT_ID,
+    #               ENTRA_CLIENT_ID, ENTRA_CLIENT_SECRET) <- recomendado
+    #   3) CA_*     (reutiliza a app do login; so funciona se ela tiver
+    #               permissao de APLICACAO no Graph com admin consent)
+    GRAPH_TENANT_ID: str | None = _get("GRAPH_TENANT_ID") or _get("ENTRA_TENANT_ID")
+    GRAPH_CLIENT_ID: str | None = _get("GRAPH_CLIENT_ID") or _get("ENTRA_CLIENT_ID") or _get("CA_CLIENT_ID")
+    GRAPH_CLIENT_SECRET: str | None = _get("GRAPH_CLIENT_SECRET") or _get("ENTRA_CLIENT_SECRET") or _get("CA_CLIENT_SECRET")
     # Base do Microsoft Graph (perfil completo do Entra ID: cargo, depto, gerente...).
     GRAPH_API_BASE_URL: str = _get("GRAPH_API_BASE_URL", "https://graph.microsoft.com/v1.0") or "https://graph.microsoft.com/v1.0"
     # Authority do Entra para obter o token (client credentials).
