@@ -1,19 +1,22 @@
 """
-Cliente do Microsoft Graph (Entra ID).
+Cliente do Microsoft Graph (Entra ID) — ACESSO INDEPENDENTE DO CAv4.
 
-Busca o PERFIL COMPLETO do usuário no Entra ID — dados que normalmente NÃO
-vêm dentro do id_token, como cargo, departamento, telefone e o gerente/supervisor.
+Diferente do CAv4 (que usa o token do usuario logado), este cliente tem
+CREDENCIAIS PROPRIAS (app registration dedicada no Entra) e obtem seu PROPRIO
+token via fluxo client credentials (app-only). Ou seja: NAO reutiliza nada do
+CAv4 nem do id_token do login — e um caminho totalmente separado para o Entra.
 
-Requisitos:
-  - O access_token (Bearer) precisa ter sido emitido para a audiência do
-    Microsoft Graph e conter o scope "User.Read".
-  - Se o token foi emitido apenas para o CA (fwca-authz), o Graph responde 401.
-    Nesse caso, a consulta é resiliente: o erro é registrado por campo e o
-    restante do login continua funcionando normalmente.
+Fluxo:
+  1) POST {authority}/{tenant}/oauth2/v2.0/token   (client_credentials)
+     -> obtem um access_token de APLICACAO para o Graph.
+  2) GET  {graph}/users/{userPrincipalName}         -> perfil completo
+  3) GET  {graph}/users/{userPrincipalName}/manager -> gerente/supervisor
 
-Endpoints usados nesta POC:
-  GET /me           -> perfil do usuário autenticado (todos os campos padrão)
-  GET /me/manager   -> gerente/supervisor do usuário
+Como e app-only (sem usuario no token), NAO existe /me: buscamos o usuario
+pelo e-mail/UPN que veio nas claims do login.
+
+Permissao necessaria no Entra (tipo APLICACAO, com admin consent):
+  - User.Read.All
 """
 
 from __future__ import annotations
@@ -25,10 +28,8 @@ import httpx
 from config import get_settings
 from errors import AppError, ErrorCategory, classify_network_exception
 
-# Campos do perfil que pedimos explicitamente ao Graph. $select garante que
-# campos como jobTitle/department/officeLocation venham mesmo que nao sejam
-# retornados por padrao.
-_ME_SELECT = (
+# Campos do perfil pedidos explicitamente ($select garante jobTitle/department etc.).
+_USER_SELECT = (
     "id,displayName,givenName,surname,userPrincipalName,mail,jobTitle,"
     "department,companyName,officeLocation,mobilePhone,businessPhones,"
     "employeeId,employeeType,preferredLanguage,usageLocation,accountEnabled"
@@ -37,67 +38,123 @@ _MANAGER_SELECT = "id,displayName,userPrincipalName,mail,jobTitle,department"
 
 
 class GraphClient:
-    """Wrapper das chamadas ao Microsoft Graph para o usuário autenticado."""
+    """Cliente app-only do Microsoft Graph (token proprio, independente do CAv4)."""
 
-    def __init__(self, access_token: str) -> None:
-        self.access_token = access_token
+    def __init__(self, user_principal_name: str) -> None:
+        # Identificador do usuario a consultar (e-mail/UPN vindo das claims).
+        self.upn = user_principal_name
         settings = get_settings()
         self.base_url = (settings.GRAPH_API_BASE_URL or "").rstrip("/")
+        self.authority = (settings.GRAPH_AUTHORITY or "").rstrip("/")
+        self.tenant_id = settings.GRAPH_TENANT_ID
+        self.client_id = settings.GRAPH_CLIENT_ID
+        self.client_secret = settings.GRAPH_CLIENT_SECRET
+        self.scope = settings.GRAPH_SCOPE
         self._verify = settings.httpx_verify
+        self._token: str | None = None
 
-    def _headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.access_token}",
-            "Accept": "application/json",
+    # -- Token (client credentials) ---------------------------------------
+    async def _ensure_token(self) -> str:
+        """Obtem (e memoiza) o token de aplicacao para o Graph."""
+        if self._token:
+            return self._token
+
+        if not (self.tenant_id and self.client_id and self.client_secret):
+            raise AppError(
+                category=ErrorCategory.CONFIG,
+                code="GRAPH_NOT_CONFIGURED",
+                message="Acesso independente ao Graph nao configurado.",
+                cause="Faltam GRAPH_TENANT_ID, GRAPH_CLIENT_ID e/ou GRAPH_CLIENT_SECRET no .env.",
+                resolution="Preencha as 3 variaveis GRAPH_* com os dados da app registration do Entra.",
+                detail="missing_graph_credentials",
+                http_status=503,
+            )
+
+        url = f"{self.authority}/{self.tenant_id}/oauth2/v2.0/token"
+        data = {
+            "grant_type": "client_credentials",
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "scope": self.scope,
         }
-
-    def _url(self, path: str) -> str:
-        return f"{self.base_url}{path}"
-
-    async def _get(self, path: str) -> Any:
-        url = self._url(path)
         try:
             async with httpx.AsyncClient(timeout=15, verify=self._verify) as client:
-                resp = await client.get(url, headers=self._headers())
+                resp = await client.post(url, data=data)
         except Exception as exc:  # noqa: BLE001
-            raise classify_network_exception(exc, url=url, who=ErrorCategory.CA) from exc
+            raise classify_network_exception(exc, url=url, who=ErrorCategory.ENTRA) from exc
+
+        if resp.status_code >= 400:
+            raise AppError(
+                category=ErrorCategory.ENTRA,
+                code="GRAPH_TOKEN_REQUEST_FAILED",
+                message=f"Falha ao obter token de aplicacao no Entra (HTTP {resp.status_code}).",
+                cause="O Entra recusou o client_credentials (tenant/client_id/secret/scope invalidos ou sem consentimento).",
+                resolution="Confira GRAPH_TENANT_ID/CLIENT_ID/CLIENT_SECRET e o admin consent de User.Read.All.",
+                detail=resp.text[:300],
+                http_status=502,
+            )
+
+        self._token = resp.json().get("access_token")
+        if not self._token:
+            raise AppError(
+                category=ErrorCategory.ENTRA,
+                code="GRAPH_TOKEN_EMPTY",
+                message="O Entra respondeu sem access_token.",
+                cause="Resposta do token sem o campo access_token.",
+                resolution="Verifique a configuracao da app registration no Entra.",
+                detail=resp.text[:300],
+                http_status=502,
+            )
+        return self._token
+
+    def _headers(self, token: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+    async def _get(self, path: str) -> Any:
+        token = await self._ensure_token()
+        url = f"{self.base_url}{path}"
+        try:
+            async with httpx.AsyncClient(timeout=15, verify=self._verify) as client:
+                resp = await client.get(url, headers=self._headers(token))
+        except Exception as exc:  # noqa: BLE001
+            raise classify_network_exception(exc, url=url, who=ErrorCategory.ENTRA) from exc
         return self._handle(resp)
 
     @staticmethod
     def _handle(resp: httpx.Response) -> Any:
         if resp.status_code == 401:
             raise AppError(
-                category=ErrorCategory.CA,
+                category=ErrorCategory.ENTRA,
                 code="GRAPH_TOKEN_INVALID",
                 message="O Microsoft Graph recusou o token (HTTP 401).",
-                cause="O access_token nao foi emitido para o Graph ou nao tem o scope User.Read.",
-                resolution="Confirme se a app pode emitir token para o Graph e se 'User.Read' esta nos scopes.",
+                cause="O token de aplicacao e invalido/expirado para o Graph.",
+                resolution="Verifique as credenciais GRAPH_* e o admin consent das permissoes.",
                 detail=resp.text[:300],
                 http_status=401,
             )
         if resp.status_code == 403:
             raise AppError(
-                category=ErrorCategory.CA,
+                category=ErrorCategory.ENTRA,
                 code="GRAPH_ACCESS_DENIED",
                 message="O Microsoft Graph negou o acesso (HTTP 403).",
-                cause="A app/usuario nao tem permissao para este recurso do Graph.",
-                resolution="Verifique as permissoes (User.Read) concedidas a aplicacao no Entra.",
+                cause="A app nao tem permissao de aplicacao para este recurso.",
+                resolution="Conceda User.Read.All (tipo Aplicacao) com admin consent no Entra.",
                 detail=resp.text[:300],
                 http_status=403,
             )
         if resp.status_code == 404:
             raise AppError(
-                category=ErrorCategory.CA,
+                category=ErrorCategory.ENTRA,
                 code="GRAPH_NOT_FOUND",
                 message="Recurso nao encontrado no Graph (HTTP 404).",
-                cause="O recurso consultado nao existe (ex.: usuario sem gerente definido).",
-                resolution="Normal quando o usuario nao possui gerente cadastrado no Entra.",
+                cause="Usuario nao encontrado pelo UPN, ou usuario sem gerente definido.",
+                resolution="Confirme o e-mail/UPN do usuario; ausencia de gerente e normal.",
                 detail=resp.text[:300],
                 http_status=404,
             )
         if resp.status_code >= 500:
             raise AppError(
-                category=ErrorCategory.CA,
+                category=ErrorCategory.ENTRA,
                 code="GRAPH_SERVER_ERROR",
                 message=f"O Microsoft Graph respondeu com erro interno (HTTP {resp.status_code}).",
                 cause="Falha no lado do servidor do Graph.",
@@ -107,7 +164,7 @@ class GraphClient:
             )
         if resp.status_code >= 400:
             raise AppError(
-                category=ErrorCategory.CA,
+                category=ErrorCategory.ENTRA,
                 code="GRAPH_REQUEST_ERROR",
                 message=f"O Microsoft Graph recusou a requisicao (HTTP {resp.status_code}).",
                 cause="Requisicao invalida para o Graph.",
@@ -119,10 +176,16 @@ class GraphClient:
             return None
         return resp.json()
 
-    async def me(self) -> Any:
-        """Perfil completo do usuario autenticado no Entra ID."""
-        return await self._get(f"/me?$select={_ME_SELECT}")
+    @staticmethod
+    def _enc(value: str) -> str:
+        from urllib.parse import quote
+        return quote(value, safe="@.")
 
-    async def me_manager(self) -> Any:
-        """Gerente/supervisor do usuario autenticado."""
-        return await self._get(f"/me/manager?$select={_MANAGER_SELECT}")
+    # -- Consultas (app-only: busca o usuario pelo UPN) --------------------
+    async def user(self) -> Any:
+        """Perfil completo do usuario no Entra ID (GET /users/{upn})."""
+        return await self._get(f"/users/{self._enc(self.upn)}?$select={_USER_SELECT}")
+
+    async def user_manager(self) -> Any:
+        """Gerente/supervisor do usuario (GET /users/{upn}/manager)."""
+        return await self._get(f"/users/{self._enc(self.upn)}/manager?$select={_MANAGER_SELECT}")

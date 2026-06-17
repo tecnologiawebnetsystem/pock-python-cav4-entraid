@@ -77,16 +77,16 @@ CAV4_CONSULTAS: list[dict] = [
     {
         "label": "graph_me",
         "method": "GET",
-        "path": "https://graph.microsoft.com/v1.0/me",
-        "titulo": "PERFIL ENTRA ID (Microsoft Graph /me)",
-        "descricao": "Perfil completo do usuário no Entra ID: cargo, departamento, empresa, telefone, etc.",
+        "path": "https://graph.microsoft.com/v1.0/users/{userPrincipalName}",
+        "titulo": "PERFIL ENTRA ID (Graph independente — /users/{upn})",
+        "descricao": "Perfil completo no Entra ID (cargo, depto, empresa...), via app PROPRIA (sem CAv4).",
     },
     {
         "label": "graph_manager",
         "method": "GET",
-        "path": "https://graph.microsoft.com/v1.0/me/manager",
-        "titulo": "GERENTE/SUPERVISOR (Microsoft Graph /me/manager)",
-        "descricao": "Gerente/supervisor direto do usuário, conforme cadastrado no Entra ID.",
+        "path": "https://graph.microsoft.com/v1.0/users/{userPrincipalName}/manager",
+        "titulo": "GERENTE/SUPERVISOR (Graph independente — /users/{upn}/manager)",
+        "descricao": "Gerente/supervisor direto no Entra ID, via app PROPRIA (sem CAv4).",
     },
 ]
 
@@ -110,6 +110,26 @@ def _extract_user_login(claims: dict) -> str | None:
         value = claims.get(key)
         if value:
             return str(value).split("@")[0]
+    return None
+
+
+def _extract_upn(claims: dict) -> str | None:
+    """
+    Extrai o e-mail/UPN do usuário das claims do Entra.
+
+    Usado pelo acesso INDEPENDENTE ao Microsoft Graph (app-only), que busca o
+    usuário por GET /users/{userPrincipalName}. Aqui queremos o identificador
+    COMPLETO (com @dominio), diferente do userLogin (matrícula) do CA.
+    """
+    for key in ("upn", "preferred_username", "email", "unique_name"):
+        value = claims.get(key)
+        if value and "@" in str(value):
+            return str(value)
+    # Último recurso: qualquer um desses, mesmo sem @.
+    for key in ("upn", "preferred_username", "email"):
+        value = claims.get(key)
+        if value:
+            return str(value)
     return None
 
 
@@ -199,13 +219,14 @@ async def entra_callback(
     claims = await client.validate_id_token(tokens.get("id_token", ""), nonce=pending.nonce)
 
     user_login = _extract_user_login(claims)
-    logger.info("[v0] login OK: userLogin=%s — consultando CAv4...", user_login)
+    user_upn = _extract_upn(claims)
+    logger.info("[v0] login OK: userLogin=%s upn=%s — consultando CAv4 e Graph...", user_login, user_upn)
 
     # Consulta o CAv4 (User API) com o access_token do usuário.
     ca_info: dict = {"userLogin": user_login}
     access_token = tokens.get("access_token")
     if access_token and user_login:
-        ca_info = await _consultar_cav4(access_token, user_login)
+        ca_info = await _consultar_cav4(access_token, user_login, user_upn)
 
     payload = {
         "status": "ok",
@@ -284,9 +305,11 @@ def _indentar(texto: str, espacos: int = 5) -> str:
     return "\n".join(prefixo + linha for linha in texto.splitlines())
 
 
-async def _consultar_cav4(access_token: str, user_login: str) -> dict:
+async def _consultar_cav4(access_token: str, user_login: str, user_upn: str | None = None) -> dict:
     """
-    Consulta a alocação/recursos do usuário no CAv4. Resiliente a falhas.
+    Consulta a alocação/recursos do usuário no CAv4 e, em paralelo, o perfil no
+    Microsoft Graph via acesso INDEPENDENTE (app-only, credenciais próprias).
+    Resiliente a falhas: cada consulta registra OK/erro sem derrubar as demais.
 
     Cada campo do resultado deixa CLARO de qual API veio, no formato:
         { "endpoint": "GET /api/users/{userLogin}/...",
@@ -296,8 +319,10 @@ async def _consultar_cav4(access_token: str, user_login: str) -> dict:
           "data": <resposta> }   # ou "error": <erro categorizado> se falhar
     """
     ca = CAUserClient(access_token)
-    graph = GraphClient(access_token)
-    info: dict = {"userLogin": user_login}
+    # GraphClient NAO usa o token do CAv4: ele pega o proprio token (app-only)
+    # e busca o usuario pelo e-mail/UPN vindo das claims do login.
+    graph = GraphClient(user_upn or "")
+    info: dict = {"userLogin": user_login, "userPrincipalName": user_upn}
 
     # Rótulo -> função do client que faz a chamada (segue a ordem do catálogo).
     chamadas = {
@@ -306,14 +331,14 @@ async def _consultar_cav4(access_token: str, user_login: str) -> dict:
         "admin_user_details": ca.admin_user_details(user_login),
         "admin_enterprise_groups": ca.admin_enterprise_groups(user_login),
         "admin_roles": ca.admin_roles(user_login),
-        "graph_me": graph.me(),
-        "graph_manager": graph.me_manager(),
+        "graph_me": graph.user(),
+        "graph_manager": graph.user_manager(),
     }
 
     for consulta in CAV4_CONSULTAS:
         label = consulta["label"]
-        # Endpoint legível: método + caminho real (com o userLogin resolvido).
-        endpoint = f"{consulta['method']} {consulta['path'].format(userLogin=user_login)}"
+        # Endpoint legível: método + caminho real (com userLogin/UPN resolvidos).
+        endpoint = f"{consulta['method']} {consulta['path'].format(userLogin=user_login, userPrincipalName=user_upn)}"
         base = {
             "endpoint": endpoint,
             "titulo": consulta["titulo"],
@@ -324,6 +349,6 @@ async def _consultar_cav4(access_token: str, user_login: str) -> dict:
         except AppError as exc:
             # Não derruba a consulta inteira: registra o erro categorizado por campo.
             info[label] = {**base, "ok": False, "error": exc.to_dict()["error"]}
-            logger.warning("[v0] CAv4 %s (%s) falhou — %s", label, endpoint, exc.log_line())
+            logger.warning("[v0] consulta %s (%s) falhou — %s", label, endpoint, exc.log_line())
 
     return info
