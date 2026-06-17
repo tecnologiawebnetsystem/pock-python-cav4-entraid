@@ -96,6 +96,38 @@ CAV4_CONSULTAS: list[dict] = [
         "titulo": "GERENTE/SUPERVISOR (Graph — /users/{upn}/manager)",
         "descricao": "Gerente/supervisor direto no Entra ID. Chamado com o e-mail vindo do CAv4.",
     },
+    {
+        "label": "graph_photo",
+        "fonte": "graph",
+        "method": "GET",
+        "path": "https://graph.microsoft.com/v1.0/users/{userPrincipalName}/photo/$value",
+        "titulo": "FOTO DO USUARIO (Graph — /photo/$value)",
+        "descricao": "Foto do usuário no Entra ID, devolvida como data URI base64 (pronta para <img>).",
+    },
+    {
+        "label": "graph_management_chain",
+        "fonte": "graph",
+        "method": "GET",
+        "path": "https://graph.microsoft.com/v1.0/users/{userPrincipalName}/manager?$expand=manager",
+        "titulo": "CADEIA DE GESTAO (Graph — manager $expand)",
+        "descricao": "Gerente e o gerente do gerente (níveis acima), aninhados no campo 'manager'.",
+    },
+    {
+        "label": "graph_direct_reports",
+        "fonte": "graph",
+        "method": "GET",
+        "path": "https://graph.microsoft.com/v1.0/users/{userPrincipalName}/directReports",
+        "titulo": "SUBORDINADOS DIRETOS (Graph — /directReports)",
+        "descricao": "Pessoas que reportam diretamente ao usuário no Entra ID.",
+    },
+    {
+        "label": "graph_member_of",
+        "fonte": "graph",
+        "method": "GET",
+        "path": "https://graph.microsoft.com/v1.0/users/{userPrincipalName}/memberOf",
+        "titulo": "GRUPOS / EQUIPES (Graph — /memberOf)",
+        "descricao": "Grupos e equipes aos quais o usuário pertence no Entra ID.",
+    },
 ]
 
 
@@ -390,6 +422,10 @@ async def _consultar_cav4(access_token: str, user_login: str, upn_fallback: str 
     chamadas_graph = {
         "graph_me": graph.user,
         "graph_manager": graph.user_manager,
+        "graph_photo": graph.user_photo,
+        "graph_management_chain": graph.user_management_chain,
+        "graph_direct_reports": graph.user_direct_reports,
+        "graph_member_of": graph.user_member_of,
     }
     for consulta in CAV4_CONSULTAS:
         if consulta.get("fonte") != "graph":
