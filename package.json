@@ -1,6 +1,0 @@
-{
-  "name": "pock-python",
-  "private": true,
-  "version": "0.0.0",
-  "description": "Projeto somente backend (FastAPI). Login CA Petrobras (Entra) + consulta CAv4. O roteamento e definido em vercel.json via experimentalServices. Este package.json existe apenas para satisfazer a etapa de instalacao na raiz; o backend gerencia suas proprias dependencias (uv)."
-}
