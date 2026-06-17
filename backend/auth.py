@@ -70,8 +70,22 @@ CAV4_CONSULTAS: list[dict] = [
         "label": "roles_contexts",
         "method": "POST",
         "path": "/api/users/{userLogin}/roles/contexts/list",
-        "titulo": "PAPEIS (Roles)",
-        "descricao": "Todos os papéis/perfis do usuário (corpo = lista de contextos; vazia = todos).",
+        "titulo": "PAPEIS (Roles via User API)",
+        "descricao": "Papéis do usuário pela User API (corpo = lista de contextos; vazia = todos).",
+    },
+    {
+        "label": "admin_user_details",
+        "method": "GET",
+        "path": "/api/admin/users/{userLogin}",
+        "titulo": "DETALHES DO USUARIO (Admin)",
+        "descricao": "Dados cadastrais do usuário (lotação, gerente/supervisor, empresa, etc.).",
+    },
+    {
+        "label": "admin_roles",
+        "method": "GET",
+        "path": "/api/admin/users/{userLogin}/roles",
+        "titulo": "PAPEIS (Roles via Admin)",
+        "descricao": "Lista os papéis/perfis do usuário (GET, sem corpo).",
     },
 ]
 
@@ -291,6 +305,8 @@ async def _consultar_cav4(access_token: str, user_login: str) -> dict:
         "user_groups": ca.user_groups(user_login),
         "information_values": ca.information_values(user_login),
         "roles_contexts": ca.roles_contexts(user_login),
+        "admin_user_details": ca.admin_user_details(user_login),
+        "admin_roles": ca.admin_roles(user_login),
     }
 
     for consulta in CAV4_CONSULTAS:
