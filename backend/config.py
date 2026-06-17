@@ -41,13 +41,27 @@ class Settings:
     # URI de callback registrada no CA (ex.: https://app.../auth/entra-callback)
     CA_REDIRECT_URI: str | None = _get("CA_REDIRECT_URI")
     # Scopes do OIDC. A app registrou "openid" e "profile".
-    # Inclui "User.Read" para viabilizar a consulta ao Microsoft Graph (/me).
-    # Se o CA nao emitir token para o Graph, a consulta #6 mostra o erro sem
-    # quebrar o restante (ela e resiliente).
-    CA_SCOPES: str = _get("CA_SCOPES", "openid profile User.Read") or "openid profile User.Read"
+    CA_SCOPES: str = _get("CA_SCOPES", "openid profile") or "openid profile"
 
+    # -- Microsoft Graph (acesso INDEPENDENTE do CAv4) ---------------------
+    # Estas credenciais sao de uma app registration PROPRIA no Entra ID, com
+    # permissao de APLICACAO (app-only / client credentials). NAO reutilizam o
+    # token do CAv4 — o backend pega seu proprio token direto no Entra e consulta
+    # o Microsoft Graph. Permissao recomendada: User.Read.All (Application).
+    GRAPH_TENANT_ID: str | None = _get("GRAPH_TENANT_ID")
+    GRAPH_CLIENT_ID: str | None = _get("GRAPH_CLIENT_ID")
+    GRAPH_CLIENT_SECRET: str | None = _get("GRAPH_CLIENT_SECRET")
     # Base do Microsoft Graph (perfil completo do Entra ID: cargo, depto, gerente...).
     GRAPH_API_BASE_URL: str = _get("GRAPH_API_BASE_URL", "https://graph.microsoft.com/v1.0") or "https://graph.microsoft.com/v1.0"
+    # Authority do Entra para obter o token (client credentials).
+    GRAPH_AUTHORITY: str = _get("GRAPH_AUTHORITY", "https://login.microsoftonline.com") or "https://login.microsoftonline.com"
+    # Scope do client credentials (sempre o .default da app no Graph).
+    GRAPH_SCOPE: str = _get("GRAPH_SCOPE", "https://graph.microsoft.com/.default") or "https://graph.microsoft.com/.default"
+
+    @property
+    def is_graph_configured(self) -> bool:
+        """True se ha credenciais proprias para o acesso independente ao Graph."""
+        return bool(self.GRAPH_TENANT_ID and self.GRAPH_CLIENT_ID and self.GRAPH_CLIENT_SECRET)
 
     # -- Endpoints OIDC do fwca-authz --------------------------------------
     # Caminho preferido: informar só o documento de discovery e deixar o BFF
