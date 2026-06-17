@@ -4,12 +4,14 @@ Cliente da User API do Controle de Acesso (CAv4).
 Todas as chamadas exigem o access_token (Bearer) obtido no fluxo OIDC, que
 fica no servidor e NUNCA é exposto ao frontend.
 
-Endpoints usados nesta POC (User API):
-  GET  /api/users/{userLogin}/enterprise-groups
-  GET  /api/users/{userLogin}/user-groups
-  GET  /api/users/{userLogin}/resources
-  GET  /api/users/{userLogin}/information-values
-  POST /api/users/{userLogin}/roles/contexts/list   (corpo: lista de contextos)
+Endpoints usados nesta POC:
+  User API:
+    GET  /api/users/{userLogin}/user-groups
+    GET  /api/users/{userLogin}/information-values
+  Admin API (GET, sem corpo):
+    GET  /api/admin/users/{userLogin}                    (detalhes do usuário/supervisor)
+    GET  /api/admin/users/{userLogin}/enterprise-groups  (enterprise groups)
+    GET  /api/admin/users/{userLogin}/roles              (papéis do usuário)
 """
 
 from __future__ import annotations
@@ -59,15 +61,6 @@ class CAUserClient:
         try:
             async with httpx.AsyncClient(timeout=15, verify=self._verify) as client:
                 resp = await client.get(url, headers=self._headers())
-        except Exception as exc:  # noqa: BLE001
-            raise classify_network_exception(exc, url=url, who=ErrorCategory.CA) from exc
-        return self._handle(resp)
-
-    async def _post(self, path: str, json_body: Any = None) -> Any:
-        url = self._url(path)
-        try:
-            async with httpx.AsyncClient(timeout=15, verify=self._verify) as client:
-                resp = await client.post(url, headers=self._headers(), json=json_body)
         except Exception as exc:  # noqa: BLE001
             raise classify_network_exception(exc, url=url, who=ErrorCategory.CA) from exc
         return self._handle(resp)
@@ -127,25 +120,23 @@ class CAUserClient:
         return resp.json()
 
     # -- Grupos ------------------------------------------------------------
-    async def enterprise_groups(self, user_login: str) -> Any:
-        return await self._get(f"/api/users/{self._enc(user_login)}/enterprise-groups")
-
     async def user_groups(self, user_login: str) -> Any:
         return await self._get(f"/api/users/{self._enc(user_login)}/user-groups")
-
-    # -- Resources ---------------------------------------------------------
-    async def resources(self, user_login: str) -> Any:
-        return await self._get(f"/api/users/{self._enc(user_login)}/resources")
 
     # -- Information Values ------------------------------------------------
     async def information_values(self, user_login: str) -> Any:
         return await self._get(f"/api/users/{self._enc(user_login)}/information-values")
 
-    # -- Roles (papéis) ----------------------------------------------------
-    async def roles_contexts(self, user_login: str, contexts: list | None = None) -> Any:
-        # POST: "Find all Roles of User in a list of Contexts".
-        # Corpo é a lista de contextos; vazia = retorna todos os papéis do usuário.
-        return await self._post(
-            f"/api/users/{self._enc(user_login)}/roles/contexts/list",
-            json_body=contexts or [],
-        )
+    # -- Admin API (GET, sem corpo) ---------------------------------------
+    async def admin_user_details(self, user_login: str) -> Any:
+        # GET: "Detalhes de Usuário" — costuma trazer dados cadastrais
+        # (lotação, gerente/supervisor, empresa, etc.).
+        return await self._get(f"/api/admin/users/{self._enc(user_login)}")
+
+    async def admin_enterprise_groups(self, user_login: str) -> Any:
+        # GET: "Listar Enterprise Groups de Usuário" (Admin).
+        return await self._get(f"/api/admin/users/{self._enc(user_login)}/enterprise-groups")
+
+    async def admin_roles(self, user_login: str) -> Any:
+        # GET: "Listar Papéis de Usuário" (GET, sem corpo).
+        return await self._get(f"/api/admin/users/{self._enc(user_login)}/roles")
