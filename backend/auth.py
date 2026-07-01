@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import logging
 import secrets
-from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -86,7 +85,7 @@ CAV4_CONSULTAS: list[dict] = [
         "method": "GET",
         "path": "https://graph.microsoft.com/v1.0/users/{userPrincipalName}",
         "titulo": "PERFIL ENTRA ID (Graph — /users/{upn})",
-        "descricao": "Perfil completo no Entra ID (cargo, depto, empresa...). Chamado com o e-mail vindo do CAv4.",
+        "descricao": "Perfil completo no Entra ID (cargo, depto, empresa...). Chamado com o UPN das claims do login.",
     },
     {
         "label": "graph_manager",
@@ -94,7 +93,7 @@ CAV4_CONSULTAS: list[dict] = [
         "method": "GET",
         "path": "https://graph.microsoft.com/v1.0/users/{userPrincipalName}/manager",
         "titulo": "GERENTE/SUPERVISOR (Graph — /users/{upn}/manager)",
-        "descricao": "Gerente/supervisor direto no Entra ID. Chamado com o e-mail vindo do CAv4.",
+        "descricao": "Gerente/supervisor direto no Entra ID. Chamado com o UPN das claims do login.",
     },
     {
         "label": "graph_photo",
@@ -169,27 +168,6 @@ def _extract_upn(claims: dict) -> str | None:
     for key in ("upn", "preferred_username", "email"):
         value = claims.get(key)
         if value:
-            return str(value)
-    return None
-
-
-def _upn_do_cav4(detalhes: Any) -> str | None:
-    """
-    Extrai o e-mail/UPN do usuário a partir da resposta de DETALHES do CAv4
-    (admin_user_details). É este e-mail, vindo do CAv4, que será usado para
-    chamar o Entra/Graph em seguida — encadeando os dois processos.
-
-    O CA pode nomear o campo de várias formas, então tentamos as mais comuns.
-    """
-    if not isinstance(detalhes, dict):
-        return None
-    # Chaves candidatas para o e-mail/login do usuário nos detalhes do CA.
-    for key in (
-        "email", "mail", "userPrincipalName", "upn", "login",
-        "userLogin", "emailAddress", "principalName",
-    ):
-        value = detalhes.get(key)
-        if value and "@" in str(value):
             return str(value)
     return None
 
@@ -281,14 +259,19 @@ async def entra_callback(
 
     user_login = _extract_user_login(claims)
     user_upn = _extract_upn(claims)
-    logger.info("[v0] login OK: userLogin=%s — Fase 1 CAv4, depois Fase 2 Entra...", user_login)
+    logger.info(
+        "[v0] login OK: userLogin=%s upn=%s — Passo 1 (CAv4) e Passo 2 (Entra) INDEPENDENTES...",
+        user_login, user_upn,
+    )
 
-    # Consulta encadeada: primeiro CAv4, depois Entra (com o e-mail vindo do CAv4).
-    # O upn das claims entra apenas como FALLBACK, caso o CAv4 não traga e-mail.
+    # DOIS PASSOS INDEPENDENTES (um NÃO depende do outro):
+    #   Passo 1 (CAv4)  -> usa o access_token + userLogin (matrícula).
+    #   Passo 2 (Entra) -> usa o UPN/e-mail vindo das CLAIMS do login.
+    # Cada passo é resiliente: se um falha, o outro continua normalmente.
     ca_info: dict = {"userLogin": user_login}
     access_token = tokens.get("access_token")
     if access_token and user_login:
-        ca_info = await _consultar_cav4(access_token, user_login, upn_fallback=user_upn)
+        ca_info = await _consultar_cav4(access_token, user_login, user_upn)
 
     payload = {
         "status": "ok",
@@ -367,24 +350,23 @@ def _indentar(texto: str, espacos: int = 5) -> str:
     return "\n".join(prefixo + linha for linha in texto.splitlines())
 
 
-async def _consultar_cav4(access_token: str, user_login: str, upn_fallback: str | None = None) -> dict:
+async def _consultar_cav4(access_token: str, user_login: str, user_upn: str | None = None) -> dict:
     """
-    Consulta o usuário em DUAS FASES, encadeadas (sem processar duas vezes):
+    Executa DOIS PASSOS TOTALMENTE INDEPENDENTES (um não depende do outro):
 
-      FASE 1 — CAv4: roda todas as consultas do CA (grupos, valores, detalhes,
-               enterprise groups, papéis) com o access_token do usuário.
+      PASSO 1 — CAv4: roda as consultas do CA (grupos, valores, detalhes,
+               enterprise groups, papéis) usando o access_token + userLogin.
 
-      FASE 2 — Entra/Graph: usa o e-mail que VEIO do CAv4 (dos Detalhes do
-               Usuário) como parâmetro para consultar o perfil e o gerente no
-               Microsoft Graph. Só roda depois que a Fase 1 terminou.
+      PASSO 2 — Entra/Graph: consulta o Microsoft Graph usando o UPN/e-mail
+               vindo das CLAIMS do login. NÃO usa nenhum dado do CAv4.
 
-    Resiliente a falhas: cada consulta registra OK/erro sem derrubar as demais.
-    Cada campo do resultado deixa CLARO de qual API veio (endpoint/titulo/etc.).
+    Como são independentes, a falha de um NÃO afeta o outro. Cada consulta
+    também é resiliente: registra OK/erro por campo, sem derrubar as demais.
     """
+    info: dict = {"userLogin": user_login, "userPrincipalName": user_upn}
+
+    # ---- PASSO 1: CAv4 (independente) -------------------------------------
     ca = CAUserClient(access_token)
-    info: dict = {"userLogin": user_login}
-
-    # Funções do CAv4 por rótulo (Fase 1).
     chamadas_cav4 = {
         "user_groups": ca.user_groups(user_login),
         "information_values": ca.information_values(user_login),
@@ -392,8 +374,6 @@ async def _consultar_cav4(access_token: str, user_login: str, upn_fallback: str 
         "admin_enterprise_groups": ca.admin_enterprise_groups(user_login),
         "admin_roles": ca.admin_roles(user_login),
     }
-
-    # ---- FASE 1: CAv4 -----------------------------------------------------
     for consulta in CAV4_CONSULTAS:
         if consulta.get("fonte") != "cav4":
             continue
@@ -410,14 +390,9 @@ async def _consultar_cav4(access_token: str, user_login: str, upn_fallback: str 
             info[label] = {**base, "ok": False, "error": exc.to_dict()["error"]}
             logger.warning("[v0] CAv4 %s (%s) falhou — %s", label, endpoint, exc.log_line())
 
-    # ---- Ponte: pega o e-mail/UPN a partir do RESULTADO do CAv4 -----------
-    detalhes_entry = info.get("admin_user_details", {})
-    detalhes_data = detalhes_entry.get("data") if detalhes_entry.get("ok") else None
-    user_upn = _upn_do_cav4(detalhes_data) or upn_fallback
-    info["userPrincipalName"] = user_upn
-    logger.info("[v0] Fase 1 (CAv4) concluida. e-mail p/ Entra=%s — iniciando Fase 2 (Graph)", user_upn)
+    logger.info("[v0] Passo 1 (CAv4) concluido. Passo 2 (Entra) usa o UPN do login=%s", user_upn)
 
-    # ---- FASE 2: Entra/Graph (usando o e-mail vindo do CAv4) --------------
+    # ---- PASSO 2: Entra/Graph (independente — usa o UPN das claims) -------
     graph = GraphClient(user_upn or "")
     chamadas_graph = {
         "graph_me": graph.user,
@@ -437,18 +412,18 @@ async def _consultar_cav4(access_token: str, user_login: str, upn_fallback: str 
             "titulo": consulta["titulo"],
             "descricao": consulta["descricao"],
         }
-        # Sem e-mail vindo do CAv4 não há como consultar o Entra: registra falha clara.
+        # Sem UPN nas claims do login não há como consultar o Entra: falha clara.
         if not user_upn:
             erro = AppError(
-                category=ErrorCategory.CONFIG,
-                code="GRAPH_SEM_EMAIL_DO_CAV4",
-                message="Não foi possível obter o e-mail do usuário no CAv4 para consultar o Entra.",
-                cause="A consulta de Detalhes do Usuário (CAv4) não retornou um e-mail/UPN.",
-                resolution="Confirme se o CA expõe o e-mail nos Detalhes do Usuário.",
+                category=ErrorCategory.ENTRA,
+                code="GRAPH_SEM_UPN_NO_LOGIN",
+                message="Não foi possível obter o e-mail/UPN do usuário nas claims do login.",
+                cause="O id_token do login não trouxe upn/preferred_username/email.",
+                resolution="Confirme se o app de login do Entra emite a claim de UPN/e-mail.",
                 http_status=424,
             )
             info[label] = {**base, "ok": False, "error": erro.to_dict()["error"]}
-            logger.warning("[v0] Graph %s pulado — sem e-mail vindo do CAv4", label)
+            logger.warning("[v0] Graph %s pulado — sem UPN nas claims do login", label)
             continue
         try:
             info[label] = {**base, "ok": True, "data": await chamadas_graph[label]()}
