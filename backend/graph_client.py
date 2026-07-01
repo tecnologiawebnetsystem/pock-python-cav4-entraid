@@ -39,12 +39,20 @@ from errors import AppError, ErrorCategory, classify_network_exception
 _USER_SELECT = (
     "id,displayName,givenName,surname,userPrincipalName,mail,jobTitle,"
     "department,companyName,officeLocation,mobilePhone,businessPhones,"
-    "employeeId,employeeType,preferredLanguage,usageLocation,accountEnabled,"
-    "streetAddress,city,state,country,postalCode,faxNumber,ageGroup,"
-    "createdDateTime,employeeHireDate,onPremisesSamAccountName,"
+    "employeeId,employeeType,employeeOrgData,userType,preferredLanguage,"
+    "usageLocation,accountEnabled,streetAddress,city,state,country,"
+    "postalCode,faxNumber,ageGroup,createdDateTime,employeeHireDate,"
+    "lastPasswordChangeDateTime,mailNickname,passwordPolicies,"
+    "assignedLicenses,assignedPlans,onPremisesSamAccountName,"
     "onPremisesDistinguishedName,otherMails,proxyAddresses,imAddresses"
 )
-_MANAGER_SELECT = "id,displayName,userPrincipalName,mail,jobTitle,department"
+# Manager ENRIQUECIDO: mesmos campos uteis do usuario (contato, empresa, matricula...).
+_MANAGER_SELECT = (
+    "id,displayName,givenName,surname,userPrincipalName,mail,jobTitle,"
+    "department,companyName,officeLocation,mobilePhone,businessPhones,"
+    "employeeId,employeeType,employeeOrgData,userType,city,state,country,"
+    "accountEnabled,onPremisesSamAccountName"
+)
 # Campos enxutos para listas (subordinados, grupos) e cada no da cadeia de gestao.
 _PERSON_SELECT = "id,displayName,userPrincipalName,mail,jobTitle,department"
 _GROUP_SELECT = "id,displayName,description,mail,groupTypes,securityEnabled"
