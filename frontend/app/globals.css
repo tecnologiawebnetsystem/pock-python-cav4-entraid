@@ -1,0 +1,61 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* Neutros */
+  --color-background: oklch(0.98 0.005 240);
+  --color-surface: oklch(1 0 0);
+  --color-surface-muted: oklch(0.965 0.006 240);
+  --color-foreground: oklch(0.22 0.02 250);
+  --color-muted-foreground: oklch(0.52 0.02 250);
+  --color-border: oklch(0.9 0.01 250);
+
+  /* Primária — verde petróleo */
+  --color-primary: oklch(0.52 0.11 175);
+  --color-primary-foreground: oklch(0.99 0 0);
+  --color-primary-soft: oklch(0.95 0.03 175);
+
+  /* Acento — âmbar (fonte Graph) */
+  --color-accent: oklch(0.72 0.15 65);
+  --color-accent-soft: oklch(0.95 0.05 75);
+
+  /* Status */
+  --color-success: oklch(0.6 0.14 155);
+  --color-success-soft: oklch(0.95 0.04 155);
+  --color-danger: oklch(0.58 0.19 25);
+  --color-danger-soft: oklch(0.95 0.05 25);
+
+  --radius: 0.75rem;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html {
+  background-color: var(--color-background);
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar sutil para os painéis de JSON */
+.scroll-thin::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.scroll-thin::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-foreground);
+  background-clip: content-box;
+}

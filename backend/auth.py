@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import secrets
 
 from fastapi import APIRouter
@@ -25,11 +26,16 @@ from config import get_settings
 from errors import AppError, ErrorCategory
 from graph_client import GraphClient
 from oidc import get_oidc_client
-from session import PendingLogin, pending_store
+from session import PendingLogin, pending_store, result_store
 
 logger = logging.getLogger("ca.auth")
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
+
+# Caminho do frontend (página que exibe os endpoints). Após o login, o callback
+# redireciona o navegador para VIEWER_PATH?r=TOKEN. É relativo à mesma origem,
+# então funciona atrás de qualquer domínio. Pode ser sobrescrito por env.
+VIEWER_PATH = os.getenv("VIEWER_PATH", "/viewer")
 
 
 # Catálogo das consultas feitas ao CAv4. Centraliza, para cada rótulo:
@@ -212,11 +218,11 @@ async def entra_callback(
     state: str | None = None,
     error: str | None = None,
     error_description: str | None = None,
-) -> JSONResponse:
+) -> RedirectResponse:
     """
-    Callback do CA. Faz tudo de uma vez e retorna um único JSON:
-      - informações do Entra (claims do id_token);
-      - informações do CAv4 (alocação/recursos/grupos do usuário).
+    Callback do CA. Faz tudo de uma vez (Entra + CAv4 + Graph), guarda o
+    resultado num store temporário e redireciona o navegador para a página
+    /viewer, que exibe todos os endpoints de forma amigável.
     """
     if error:
         raise AppError(
@@ -287,6 +293,32 @@ async def entra_callback(
     # Imprime TUDO que o CAv4 recebeu do Entra no terminal (tela preta).
     _imprimir_no_terminal(payload)
 
+    # Em vez de devolver o JSON cru no navegador, guardamos o resultado num
+    # store temporário e redirecionamos para a página /viewer, que busca o
+    # payload pelo token e exibe tudo de forma amigável. A lógica acima (login,
+    # CAv4 e Graph) permanece idêntica; só muda a ENTREGA do resultado.
+    token = result_store.save(payload)
+    return RedirectResponse(f"{VIEWER_PATH}?r={token}", status_code=302)
+
+
+@router.get("/result/{token}")
+async def login_result(token: str) -> JSONResponse:
+    """
+    Devolve o payload do login associado a um token (gerado no callback).
+
+    A página /viewer chama este endpoint com o token recebido na URL para
+    montar a tela de endpoints. O token expira em poucos minutos.
+    """
+    payload = result_store.get(token)
+    if payload is None:
+        raise AppError(
+            category=ErrorCategory.SERVIDOR,
+            code="RESULT_NOT_FOUND",
+            message="Resultado do login não encontrado ou expirado.",
+            cause="O token é inválido, já expirou (10 min) ou o servidor reiniciou.",
+            resolution="Refaça o login para gerar um novo resultado.",
+            http_status=404,
+        )
     return JSONResponse(payload)
 
 
