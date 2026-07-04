@@ -1,6 +1,6 @@
 'use client'
 
-import { Loader2, ShieldAlert, LogIn, ClipboardPaste } from 'lucide-react'
+import { Loader2, ShieldAlert, LogIn } from 'lucide-react'
 
 /** Tela central de "verificando sessão" / "carregando dados". */
 export function LoadingScreen({ title, subtitle }: { title: string; subtitle: string }) {
@@ -23,11 +23,9 @@ export function LoadingScreen({ title, subtitle }: { title: string; subtitle: st
 export function ErrorScreen({
   message,
   onLogin,
-  onManual,
 }: {
   message: string
   onLogin: () => void
-  onManual: () => void
 }) {
   return (
     <div className="flex min-h-[70vh] items-center justify-center px-4">
@@ -41,24 +39,14 @@ export function ErrorScreen({
           </h2>
           <p className="mt-1 text-sm text-muted-foreground text-pretty">{message}</p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-center">
-          <button
-            type="button"
-            onClick={onLogin}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:opacity-90"
-          >
-            <LogIn size={16} />
-            Entrar novamente
-          </button>
-          <button
-            type="button"
-            onClick={onManual}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-muted"
-          >
-            <ClipboardPaste size={16} />
-            Colar JSON manualmente
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onLogin}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:opacity-90"
+        >
+          <LogIn size={16} />
+          Entrar novamente
+        </button>
       </div>
     </div>
   )

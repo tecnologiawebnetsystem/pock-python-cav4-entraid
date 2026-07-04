@@ -1,12 +1,11 @@
 'use client'
 
-import { User, Mail, IdCard, RotateCcw } from 'lucide-react'
+import { User, Mail, IdCard } from 'lucide-react'
 import type { CallbackPayload, NormalizedEndpoint } from '@/lib/types'
 
 interface Props {
   payload: CallbackPayload
   endpoints: NormalizedEndpoint[]
-  onReset: () => void
 }
 
 function getPhoto(endpoints: NormalizedEndpoint[]): string | null {
@@ -17,7 +16,7 @@ function getPhoto(endpoints: NormalizedEndpoint[]): string | null {
   return null
 }
 
-export function IdentityHeader({ payload, endpoints, onReset }: Props) {
+export function IdentityHeader({ payload, endpoints }: Props) {
   const entra = payload.entra ?? {}
   const photo = getPhoto(endpoints)
   const okCount = endpoints.filter((e) => e.ok).length
@@ -67,25 +66,15 @@ export function IdentityHeader({ payload, endpoints, onReset }: Props) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-lg bg-success-soft px-3 py-1.5 text-sm font-medium text-success">
-              {okCount} OK
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-success-soft px-3 py-1.5 text-sm font-medium text-success">
+            {okCount} OK
+          </span>
+          {failCount > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-danger-soft px-3 py-1.5 text-sm font-medium text-danger">
+              {failCount} falha{failCount > 1 ? 's' : ''}
             </span>
-            {failCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-lg bg-danger-soft px-3 py-1.5 text-sm font-medium text-danger">
-                {failCount} falha{failCount > 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onReset}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-muted"
-          >
-            <RotateCcw size={15} />
-            <span className="hidden sm:inline">Novo JSON</span>
-          </button>
+          )}
         </div>
       </div>
 
