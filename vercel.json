@@ -1,5 +1,9 @@
 {
   "experimentalServices": {
+    "frontend": {
+      "entrypoint": "frontend",
+      "routePrefix": "/viewer"
+    },
     "backend": {
       "entrypoint": "backend/main.py",
       "routePrefix": "/"
