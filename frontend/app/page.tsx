@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { Braces, KeyRound, FileCode2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import useSWR from 'swr'
+import { Braces, KeyRound, FileCode2, LogIn } from 'lucide-react'
 import type { CallbackPayload } from '@/lib/types'
 import { extractEndpoints } from '@/lib/types'
 import { JsonInput } from '@/components/json-input'
@@ -9,55 +10,163 @@ import { IdentityHeader } from '@/components/identity-header'
 import { EndpointList } from '@/components/endpoint-list'
 import { EndpointDetail } from '@/components/endpoint-detail'
 import { JsonView } from '@/components/json-view'
+import { LoadingScreen, ErrorScreen } from '@/components/status-screen'
 
 type Aba = 'endpoints' | 'claims' | 'raw'
+type Fase = 'init' | 'redirecionando' | 'carregando' | 'pronto' | 'manual' | 'erro'
+
+// Rota do backend que inicia o login no CA/Entra (fora do basePath /viewer).
+const LOGIN_URL = '/auth/login'
+
+const fetcher = async (url: string): Promise<CallbackPayload> => {
+  const res = await fetch(url)
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error?.message ?? `Falha ao carregar (HTTP ${res.status}).`)
+  }
+  return res.json()
+}
 
 export default function Page() {
+  const [fase, setFase] = useState<Fase>('init')
+  const [token, setToken] = useState<string | null>(null)
   const [payload, setPayload] = useState<CallbackPayload | null>(null)
+  const [erro, setErro] = useState<string>('')
+
   const [selected, setSelected] = useState<string>('')
   const [aba, setAba] = useState<Aba>('endpoints')
+
+  // Ao abrir a página: decide o que fazer com base na URL.
+  //  - ?r=TOKEN  -> voltou logado; busca o resultado no backend.
+  //  - ?manual=1 -> modo de colar JSON manualmente (fallback/debug).
+  //  - senão     -> não há sessão nesta página; vai para a tela de login do CA.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const r = params.get('r')
+    const manual = params.get('manual')
+
+    if (r) {
+      setToken(r)
+      setFase('carregando')
+    } else if (manual === '1') {
+      setFase('manual')
+    } else {
+      setFase('redirecionando')
+      window.location.href = LOGIN_URL
+    }
+  }, [])
+
+  // Busca o payload do login quando temos um token (via SWR, sem retry infinito).
+  const { data, error } = useSWR(token ? `/auth/result/${token}` : null, fetcher, {
+    revalidateOnFocus: false,
+    shouldRetryOnError: false,
+  })
+
+  useEffect(() => {
+    if (!data) return
+    setPayload(data)
+    const eps = extractEndpoints(data)
+    setSelected(eps[0]?.label ?? '')
+    setAba('endpoints')
+    setFase('pronto')
+    // Remove o token da URL depois de carregar (evita recarregar/compartilhar).
+    window.history.replaceState({}, '', window.location.pathname)
+  }, [data])
+
+  useEffect(() => {
+    if (!error) return
+    setErro((error as Error).message)
+    setFase('erro')
+  }, [error])
 
   const endpoints = useMemo(
     () => (payload ? extractEndpoints(payload) : []),
     [payload],
   )
+  const selectedEndpoint = endpoints.find((e) => e.label === selected) ?? endpoints[0]
 
-  const handleLoad = (p: CallbackPayload) => {
+  const handleManualLoad = (p: CallbackPayload) => {
     setPayload(p)
     const eps = extractEndpoints(p)
     setSelected(eps[0]?.label ?? '')
     setAba('endpoints')
+    setFase('pronto')
   }
 
-  const selectedEndpoint = endpoints.find((e) => e.label === selected) ?? endpoints[0]
+  const irParaLogin = () => {
+    window.location.href = LOGIN_URL
+  }
 
+  // --- Telas de transição -------------------------------------------------
+  if (fase === 'init' || fase === 'redirecionando') {
+    return (
+      <LoadingScreen
+        title="Verificando sua sessão…"
+        subtitle="Estamos confirmando seu login no CA Petrobras (Entra ID)."
+      />
+    )
+  }
+
+  if (fase === 'carregando') {
+    return (
+      <LoadingScreen
+        title="Carregando dados do login…"
+        subtitle="Buscando as respostas dos endpoints do CAv4 e do Microsoft Graph."
+      />
+    )
+  }
+
+  if (fase === 'erro') {
+    return (
+      <ErrorScreen
+        message={erro}
+        onLogin={irParaLogin}
+        onManual={() => {
+          setErro('')
+          setToken(null)
+          setFase('manual')
+        }}
+      />
+    )
+  }
+
+  // --- Página principal ---------------------------------------------------
   return (
     <main className="min-h-screen">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
         {/* Título */}
-        <div className="mb-6 flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Braces size={20} />
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+              <Braces size={20} />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-foreground">Visualizador de Endpoints</h1>
+              <p className="text-sm text-muted-foreground">
+                Login CA Petrobras · Entra ID · CAv4 · Microsoft Graph
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-semibold text-foreground">Visualizador de Endpoints</h1>
-            <p className="text-sm text-muted-foreground">
-              Login CA Petrobras · Entra ID · CAv4 · Microsoft Graph
-            </p>
-          </div>
+          {fase === 'manual' && (
+            <button
+              type="button"
+              onClick={irParaLogin}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-muted"
+            >
+              <LogIn size={15} />
+              Entrar pelo CA
+            </button>
+          )}
         </div>
 
         {!payload ? (
-          <JsonInput onLoad={handleLoad} />
+          <JsonInput onLoad={handleManualLoad} />
         ) : (
           <div className="flex flex-col gap-5">
             <IdentityHeader
               payload={payload}
               endpoints={endpoints}
-              onReset={() => {
-                setPayload(null)
-                setSelected('')
-              }}
+              onReset={irParaLogin}
             />
 
             {/* Abas */}
