@@ -16,8 +16,9 @@ O projeto agora tem **dois serviços**:
 - **`frontend/`** — app **Next.js** (a página `/viewer`) que exibe os endpoints e
   o JSON de cada um. É **somente leitura** — não edita nem envia nada.
 
-Os dois rodam juntos como um único app via `vercel.json` (`experimentalServices`):
-o frontend responde em **`/viewer`** e o backend em **`/`** (raiz).
+Localmente você roda os dois separados (uvicorn + Next.js) e acessa tudo por
+**`http://localhost:3000/viewer`** — o frontend encaminha as chamadas do backend
+automaticamente. O `vercel.json` só é usado caso um dia queira publicar na Vercel.
 
 ---
 
@@ -57,8 +58,8 @@ o frontend responde em **`/viewer`** e o backend em **`/`** (raiz).
 │   ├── app/                # page.tsx, layout.tsx, globals.css
 │   ├── components/         # lista de endpoints, detalhe, visualizador de JSON
 │   ├── lib/types.ts        # tipos + extração dos endpoints da resposta
-│   └── next.config.ts      # basePath /viewer
-└── vercel.json             # roteamento dos 2 serviços (experimentalServices)
+│   └── next.config.ts      # basePath /viewer + proxy p/ o backend em dev
+└── vercel.json             # roteamento dos 2 serviços (só p/ deploy na Vercel)
 ```
 
 ---
@@ -67,52 +68,74 @@ o frontend responde em **`/viewer`** e o backend em **`/`** (raiz).
 
 | Ferramenta | Versão | Para quê |
 |------------|--------|----------|
-| **Python** | 3.12+ | Backend |
+| **Python** | 3.12+ | Backend (uvicorn) |
 | **uv** | recente | Dependências do Python |
-| **Node.js** | 20+ | Frontend |
-| **Vercel CLI** | recente | Rodar os 2 serviços juntos (`vercel dev`) |
+| **Node.js** | 20+ | Frontend (Next.js) |
 
 ```bash
 python --version && uv --version && node --version
-npm i -g vercel      # instala a CLI da Vercel (se ainda não tiver)
 ```
 
 > Sem `uv`: `pip install uv` (ou https://docs.astral.sh/uv/)
+>
+> **Não é necessário Vercel nem `vercel dev`** — tudo roda localmente na sua máquina.
 
 ---
 
-## Como rodar e testar
+## Como rodar e testar (100% local, sem Vercel)
 
-Há duas formas. A **forma recomendada** roda os dois serviços juntos, com o
-roteamento igual ao de produção (a página `/viewer` fala com o backend sem
-configuração extra).
+A ideia é simples: **dois terminais**, um para o backend (uvicorn) e outro para o
+frontend (Next.js). O frontend já vem configurado para, em modo de
+desenvolvimento, encaminhar as rotas do backend (`/auth/*` e `/health`) para o
+uvicorn — então **você acessa tudo por uma única porta: `http://localhost:3000`**.
 
-### Opção A — Tudo junto com `vercel dev` (recomendado)
-
-No **primeiro uso**, prepare cada serviço:
+### Passo 1 — Preparar (apenas no primeiro uso)
 
 ```bash
-# 1) dependências do backend
+# dependências do backend
 cd backend
 uv sync
 cp .env.example .env          # preencha as variáveis (veja a seção abaixo)
 cd ..
 
-# 2) dependências do frontend
+# dependências do frontend
 cd frontend
 npm install
 cd ..
 ```
 
-Depois, na **raiz do projeto**, rode tudo com um comando:
+No `backend/.env`, deixe a `CA_REDIRECT_URI` apontando para a **porta 3000**
+(porque é por ela que você vai acessar tudo) e registre essa mesma URI no CA:
 
-```bash
-vercel dev
+```
+CA_REDIRECT_URI=http://localhost:3000/auth/entra-callback
 ```
 
-Isso sobe o backend e o frontend juntos em **http://localhost:3000**.
+### Passo 2 — Subir o backend (Terminal 1)
 
-**Para testar:**
+```bash
+cd backend
+uv run uvicorn main:app --reload --port 8000
+```
+
+O backend fica em `http://localhost:8000` (Swagger em `/docs`, health em `/health`).
+Deixe este terminal aberto — é nele que o resultado do login também é impresso.
+
+### Passo 3 — Subir o frontend (Terminal 2)
+
+```bash
+cd frontend
+npm run dev
+```
+
+O frontend fica em `http://localhost:3000` e encaminha as chamadas de `/auth/*`
+para o backend na 8000 automaticamente (via `rewrites` do `next.config.ts`).
+
+> Se o seu backend rodar em outra porta, ajuste com a env
+> `BACKEND_ORIGIN` ao iniciar o frontend, ex.:
+> `BACKEND_ORIGIN=http://localhost:9000 npm run dev`.
+
+### Passo 4 — Testar
 
 1. Abra **http://localhost:3000/viewer** no navegador.
 2. Você é redirecionado para o login do CA (Entra). Autentique.
@@ -121,39 +144,12 @@ Isso sobe o backend e o frontend juntos em **http://localhost:3000**.
    - Aba **Endpoints** — lista + JSON de cada endpoint (CAv4 e Graph).
    - Aba **Claims do Entra** — as claims do `id_token`.
    - Aba **JSON completo** — a resposta inteira do callback.
-5. O mesmo resultado também aparece no **terminal** onde o `vercel dev` roda.
+5. O mesmo resultado também aparece no **Terminal 1** (backend).
 
-> Importante: em `vercel dev`, a `CA_REDIRECT_URI` do `.env` deve apontar para
-> **`http://localhost:3000/auth/entra-callback`** (porta 3000, não 8000) e essa
-> URI precisa estar **registrada no CA**.
-
-### Opção B — Só o backend (ver os dados no terminal)
-
-Se você quer apenas confirmar o login e ver o JSON no terminal (sem a página):
-
-```bash
-cd backend
-uv sync
-cp .env.example .env          # CA_REDIRECT_URI = http://localhost:8000/auth/entra-callback
-uv run uvicorn main:app --reload --port 8000
-```
-
-Abra **http://localhost:8000/auth/login**, autentique, e veja tudo impresso no
-terminal. (Swagger em `/docs`, health em `/health`.) Nesse modo o callback tenta
-redirecionar para `/viewer`; como o frontend não está no ar, use a Opção A para
-ver a página.
-
----
-
-### Testando na Vercel (deploy)
-
-Ao publicar, defina o **Framework Preset** do projeto como **Services**
-(Settings → Build and Deployment). Sem isso, `/viewer` pode retornar 404.
-Depois do deploy, abra `https://SEU-DOMINIO/viewer`. Lembre de:
-
-- registrar a `CA_REDIRECT_URI` de produção (ex.: `https://SEU-DOMINIO/auth/entra-callback`)
-  no CA e nas variáveis de ambiente do projeto na Vercel;
-- configurar as demais variáveis (abaixo) no painel da Vercel.
+> **Só o backend?** Se quiser apenas ver o JSON no terminal, sem a página, rode
+> só o Passo 2, use `CA_REDIRECT_URI=http://localhost:8000/auth/entra-callback` e
+> abra `http://localhost:8000/auth/login`. (Nesse modo o callback tenta ir para
+> `/viewer`; para ver a página, use o fluxo completo dos dois terminais acima.)
 
 ---
 
@@ -199,8 +195,8 @@ O arquivo `backend/.env` (criado acima) contém as configurações. Pontos de at
 - **`CA_CLIENT_SECRET`** — segredo da aplicação no CA (em HOM/PROD use Secrets Manager).
 - **`CA_REDIRECT_URI`** — URI de callback **registrada no CA**; precisa ser
   exatamente igual à cadastrada. Use `http://localhost:3000/auth/entra-callback`
-  para teste com `vercel dev`, ou `http://localhost:8000/auth/entra-callback` no
-  modo só-backend. É exigida pelo protocolo OIDC — sem ela o login não acontece.
+  no fluxo completo (dois terminais), ou `http://localhost:8000/auth/entra-callback`
+  no modo só-backend. É exigida pelo protocolo OIDC — sem ela o login não acontece.
 - **`VIEWER_PATH`** *(opcional)* — caminho para onde o callback redireciona após o
   login. Padrão: `/viewer`. Só mude se hospedar a página em outro caminho.
 - **`CA_SSL_VERIFY` / `CA_SSL_CERT_FILE`** — se o login falhar com erro de SSL,
@@ -228,10 +224,11 @@ preenchida vence): **`GRAPH_*` → `ENTRA_*` → `CA_*`**.
 
 | Problema | Causa provável | Solução |
 |----------|----------------|---------|
-| `/viewer` retorna 404 (na Vercel) | Framework Preset errado | Defina o preset como **Services** em Settings → Build and Deployment |
-| A página fica em "Verificando sua sessão…" e não sai | Backend fora do ar / `vercel dev` não rodou os 2 serviços | Rode pela **Opção A** (`vercel dev` na raiz) |
+| A página fica em "Verificando sua sessão…" e não sai | Backend (uvicorn) fora do ar | Confira o **Terminal 1** e suba o backend (Passo 2) |
+| `502`/erro ao chamar `/auth/...` no front | Backend em outra porta | Suba na 8000 ou use `BACKEND_ORIGIN=http://localhost:PORTA npm run dev` |
 | "Resultado do login não encontrado ou expirado" | Token expirou (10 min) ou o backend reiniciou | Clique em **Entrar novamente** para refazer o login |
-| O callback nunca chega (sem dados) | `CA_REDIRECT_URI` não bate com o registrado no CA | Ajuste a URI no CA e no `.env` (porta 3000 no `vercel dev`) |
+| O callback nunca chega (sem dados) | `CA_REDIRECT_URI` não bate com o registrado no CA | Ajuste a URI no CA e no `.env` para `http://localhost:3000/auth/entra-callback` |
+| `/viewer` retorna 404 (só na Vercel) | Framework Preset errado | Defina o preset como **Services** em Settings → Build and Deployment |
 | `Internal Server Error` no login | Certificado SSL da CA interna não confiável no Python | Configure `CA_SSL_CERT_FILE` ou `CA_SSL_VERIFY=false` (só DSV) |
 | `command not found: uv` | `uv` não instalado | `pip install uv` |
 | Consultas do Entra com `GRAPH_ACCESS_DENIED` (HTTP 403) | A app do Entra não tem permissão de **aplicação** no Graph | Conceda `User.Read.All` e `GroupMember.Read.All` (tipo Aplicação) com **admin consent** |
