@@ -4,7 +4,11 @@ import { dirname } from 'node:path'
 
 // Origem do backend FastAPI quando rodando LOCALMENTE (uvicorn).
 // Pode ser sobrescrita por env (BACKEND_ORIGIN), mas o padrão é a porta 8000.
-const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN ?? 'http://localhost:8000'
+// IMPORTANTE: usamos 127.0.0.1 (IPv4) e NÃO "localhost". No Windows/Node, o
+// "localhost" costuma resolver primeiro para o IPv6 ::1, mas o uvicorn escuta
+// só em IPv4 — isso causa "connect ECONNREFUSED ::1:8000" no proxy. Fixar o
+// IPv4 evita esse erro.
+const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN ?? 'http://127.0.0.1:8000'
 const isDev = process.env.NODE_ENV === 'development'
 
 // Pasta deste próprio arquivo (a raiz real do frontend).
