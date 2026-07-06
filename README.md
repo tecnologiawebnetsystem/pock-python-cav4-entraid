@@ -59,7 +59,6 @@ automaticamente. O `vercel.json` só é usado caso um dia queira publicar na Ver
 │   ├── components/         # lista de endpoints, detalhe, visualizador de JSON
 │   ├── lib/types.ts        # tipos + extração dos endpoints da resposta
 │   └── next.config.ts      # basePath /viewer + proxy p/ o backend em dev
-└── vercel.json             # roteamento dos 2 serviços (só p/ deploy na Vercel)
 ```
 
 ---
@@ -77,12 +76,10 @@ python --version && uv --version && node --version
 ```
 
 > Sem `uv`: `pip install uv` (ou https://docs.astral.sh/uv/)
->
-> **Não é necessário Vercel nem `vercel dev`** — tudo roda localmente na sua máquina.
 
 ---
 
-## Como rodar e testar (100% local, sem Vercel)
+## Como rodar e testar (100% local)
 
 A ideia é simples: **dois terminais**, um para o backend (uvicorn) e outro para o
 frontend (Next.js). O frontend já vem configurado para, em modo de
