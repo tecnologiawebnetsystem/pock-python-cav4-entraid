@@ -1,8 +1,8 @@
-### Pock Python — POC Login CA Petrobras + Entra ID (FastAPI, somente backend)
+### Pock Python — POC Login CA Petrobras + Entra ID (FastAPI + Next.js)
 
-Esta POC tem um objetivo único e simples: **acessar `/auth/login`, autenticar no
-CA Petrobras (Entra) e ver no terminal todas as informações retornadas**. Após o
-login, o backend executa um fluxo **encadeado em duas fases**:
+Esta POC faz o login no **CA Petrobras (Entra ID)** e mostra, numa página bonita,
+**todas as informações retornadas** por cada endpoint consultado. Após o login, o
+backend executa um fluxo **encadeado em duas fases**:
 
 1. **Fase 1 — CAv4:** consulta a User/Admin API do CAv4 (grupos, valores de
    informação, detalhes do usuário, enterprise groups e papéis).
@@ -10,12 +10,32 @@ login, o backend executa um fluxo **encadeado em duas fases**:
    consulta o Microsoft Graph para trazer perfil, gerente, foto, cadeia de
    gestão, subordinados diretos e grupos.
 
-**Não há frontend.** O projeto é exclusivamente o serviço `backend/` — uma API
-**FastAPI** (Python) com 2 rotas: `/auth/login` e `/auth/entra-callback`. O
-resultado do login é despejado na **tela preta (terminal)** e também retornado
-como JSON.
+O projeto agora tem **dois serviços**:
 
-> Guia detalhado de execução em **[RUNNING.md](./RUNNING.md)**.
+- **`backend/`** — API **FastAPI** (Python) que faz o login e as consultas.
+- **`frontend/`** — app **Next.js** (a página `/viewer`) que exibe os endpoints e
+  o JSON de cada um. É **somente leitura** — não edita nem envia nada.
+
+Os dois rodam juntos como um único app via `vercel.json` (`experimentalServices`):
+o frontend responde em **`/viewer`** e o backend em **`/`** (raiz).
+
+---
+
+### Como funciona o fluxo (ponto de entrada = `/viewer`)
+
+```
+1. Você abre  /viewer
+2. A página verifica se há sessão. Se NÃO houver, redireciona para /auth/login
+3. /auth/login  -> manda para a tela de login do CA (Entra).
+   (Se você já tem sessão SSO no Entra, ele volta sem pedir senha.)
+4. /auth/entra-callback -> troca o code por tokens, roda as 11 consultas
+   (CAv4 + Graph), imprime tudo no TERMINAL e guarda o resultado num token curto.
+5. O callback redireciona para /viewer?r=TOKEN
+6. /viewer busca o resultado em /auth/result/{TOKEN} e mostra tudo na tela:
+   identidade, lista dos 11 endpoints e o JSON retornado por cada um.
+```
+
+> O resultado também continua sendo impresso no **terminal** do backend.
 
 ---
 
@@ -23,61 +43,128 @@ como JSON.
 
 ```
 .
-├── backend/            # API FastAPI (todo o código fica aqui)
-│   ├── main.py         # entrypoint da API + rotas /health
-│   ├── auth.py         # /auth/login e /auth/entra-callback + catálogo de consultas
-│   ├── oidc.py         # fluxo OIDC (discovery, troca de code, validação de token)
-│   ├── ca_client.py    # consultas à User/Admin API do CAv4 (Fase 1)
-│   ├── graph_client.py # consultas ao Microsoft Graph / Entra ID (Fase 2)
-│   ├── config.py       # configurações via variáveis de ambiente
-│   ├── session.py      # store em memória dos logins pendentes
-│   ├── errors.py       # erros categorizados
-│   └── .env.example    # modelo de variáveis de ambiente
-├── vercel.json         # roteamento do serviço backend (experimentalServices)
-└── package.json        # stub vazio exigido pelo build da Vercel (não é frontend)
+├── backend/                # API FastAPI
+│   ├── main.py             # entrypoint da API + /health
+│   ├── auth.py             # /auth/login, /auth/entra-callback, /auth/result/{token}
+│   ├── oidc.py             # fluxo OIDC (discovery, troca de code, validação)
+│   ├── ca_client.py        # consultas ao CAv4 (Fase 1)
+│   ├── graph_client.py     # consultas ao Microsoft Graph (Fase 2)
+│   ├── config.py           # configurações via variáveis de ambiente
+│   ├── session.py          # store em memória (logins pendentes + resultados)
+│   ├── errors.py           # erros categorizados
+│   └── .env.example        # modelo de variáveis de ambiente
+├── frontend/               # app Next.js (página /viewer, somente leitura)
+│   ├── app/                # page.tsx, layout.tsx, globals.css
+│   ├── components/         # lista de endpoints, detalhe, visualizador de JSON
+│   ├── lib/types.ts        # tipos + extração dos endpoints da resposta
+│   └── next.config.ts      # basePath /viewer
+└── vercel.json             # roteamento dos 2 serviços (experimentalServices)
 ```
 
 ---
 
 ### Pré-requisitos
 
-| Ferramenta | Versão recomendada | Para quê |
-|------------|--------------------|----------|
-| **Python** | 3.12 ou superior | Rodar o backend |
-| **uv** | mais recente | Dependências do Python |
+| Ferramenta | Versão | Para quê |
+|------------|--------|----------|
+| **Python** | 3.12+ | Backend |
+| **uv** | recente | Dependências do Python |
+| **Node.js** | 20+ | Frontend |
+| **Vercel CLI** | recente | Rodar os 2 serviços juntos (`vercel dev`) |
 
 ```bash
-python --version && uv --version
+python --version && uv --version && node --version
+npm i -g vercel      # instala a CLI da Vercel (se ainda não tiver)
 ```
 
 > Sem `uv`: `pip install uv` (ou https://docs.astral.sh/uv/)
 
 ---
 
-### Como rodar
+## Como rodar e testar
+
+Há duas formas. A **forma recomendada** roda os dois serviços juntos, com o
+roteamento igual ao de produção (a página `/viewer` fala com o backend sem
+configuração extra).
+
+### Opção A — Tudo junto com `vercel dev` (recomendado)
+
+No **primeiro uso**, prepare cada serviço:
+
+```bash
+# 1) dependências do backend
+cd backend
+uv sync
+cp .env.example .env          # preencha as variáveis (veja a seção abaixo)
+cd ..
+
+# 2) dependências do frontend
+cd frontend
+npm install
+cd ..
+```
+
+Depois, na **raiz do projeto**, rode tudo com um comando:
+
+```bash
+vercel dev
+```
+
+Isso sobe o backend e o frontend juntos em **http://localhost:3000**.
+
+**Para testar:**
+
+1. Abra **http://localhost:3000/viewer** no navegador.
+2. Você é redirecionado para o login do CA (Entra). Autentique.
+3. Ao voltar, a página mostra sua identidade e **os 11 endpoints**.
+4. **Clique em qualquer endpoint** para ver o JSON que ele retornou.
+   - Aba **Endpoints** — lista + JSON de cada endpoint (CAv4 e Graph).
+   - Aba **Claims do Entra** — as claims do `id_token`.
+   - Aba **JSON completo** — a resposta inteira do callback.
+5. O mesmo resultado também aparece no **terminal** onde o `vercel dev` roda.
+
+> Importante: em `vercel dev`, a `CA_REDIRECT_URI` do `.env` deve apontar para
+> **`http://localhost:3000/auth/entra-callback`** (porta 3000, não 8000) e essa
+> URI precisa estar **registrada no CA**.
+
+### Opção B — Só o backend (ver os dados no terminal)
+
+Se você quer apenas confirmar o login e ver o JSON no terminal (sem a página):
 
 ```bash
 cd backend
-uv sync                 # cria o ambiente e instala as dependências
-cp .env.example .env    # cria as variáveis de ambiente
+uv sync
+cp .env.example .env          # CA_REDIRECT_URI = http://localhost:8000/auth/entra-callback
 uv run uvicorn main:app --reload --port 8000
 ```
 
-Disponível em **http://localhost:8000** (Swagger em `/docs`, health em `/health`).
-Deixe esse terminal aberto — é nele que as informações do login serão impressas.
+Abra **http://localhost:8000/auth/login**, autentique, e veja tudo impresso no
+terminal. (Swagger em `/docs`, health em `/health`.) Nesse modo o callback tenta
+redirecionar para `/viewer`; como o frontend não está no ar, use a Opção A para
+ver a página.
 
 ---
 
-### O fluxo da POC
+### Testando na Vercel (deploy)
 
-1. Acesse **http://localhost:8000/auth/login** no navegador.
-2. O backend redireciona para o login do CA (Entra).
-3. Após autenticar, o CA volta em `GET /auth/entra-callback`.
-4. O backend troca o code por tokens e executa as duas fases abaixo,
-   **imprimindo tudo no terminal** (e também retornando um JSON):
-   - **Fase 1 (CAv4):** roda as 5 consultas do CA com o `access_token`.
-   - **Ponte:** extrai o e-mail/UPN do resultado de *Detalhes do Usuário* do CAv4.
-   - **Fase 2 (Entra/Graph):** com esse e-mail, consulta o Microsoft Graph.
+Ao publicar, defina o **Framework Preset** do projeto como **Services**
+(Settings → Build and Deployment). Sem isso, `/viewer` pode retornar 404.
+Depois do deploy, abra `https://SEU-DOMINIO/viewer`. Lembre de:
+
+- registrar a `CA_REDIRECT_URI` de produção (ex.: `https://SEU-DOMINIO/auth/entra-callback`)
+  no CA e nas variáveis de ambiente do projeto na Vercel;
+- configurar as demais variáveis (abaixo) no painel da Vercel.
+
+---
+
+### Rotas do backend
+
+| Rota | O que faz |
+|------|-----------|
+| `GET /auth/login` | Redireciona para o login do CA (Entra). |
+| `GET /auth/entra-callback` | Troca o code por tokens, roda as 11 consultas, imprime no terminal e redireciona para `/viewer?r=TOKEN`. |
+| `GET /auth/result/{token}` | Devolve o JSON do login associado ao token (a página `/viewer` usa isto). Expira em ~10 min. |
+| `GET /health` | Health check. |
 
 ---
 
@@ -111,8 +198,11 @@ O arquivo `backend/.env` (criado acima) contém as configurações. Pontos de at
   exato com o time do CA (pode haver um *realm*).
 - **`CA_CLIENT_SECRET`** — segredo da aplicação no CA (em HOM/PROD use Secrets Manager).
 - **`CA_REDIRECT_URI`** — URI de callback **registrada no CA**; precisa ser
-  exatamente igual à cadastrada (ex.: `http://localhost:8000/auth/entra-callback`
-  para teste local). É exigida pelo protocolo OIDC — sem ela o login não acontece.
+  exatamente igual à cadastrada. Use `http://localhost:3000/auth/entra-callback`
+  para teste com `vercel dev`, ou `http://localhost:8000/auth/entra-callback` no
+  modo só-backend. É exigida pelo protocolo OIDC — sem ela o login não acontece.
+- **`VIEWER_PATH`** *(opcional)* — caminho para onde o callback redireciona após o
+  login. Padrão: `/viewer`. Só mude se hospedar a página em outro caminho.
 - **`CA_SSL_VERIFY` / `CA_SSL_CERT_FILE`** — se o login falhar com erro de SSL,
   aponte `CA_SSL_CERT_FILE` para o bundle da CA interna da Petrobras (recomendado)
   ou, **somente em DSV**, defina `CA_SSL_VERIFY=false`.
@@ -138,9 +228,11 @@ preenchida vence): **`GRAPH_*` → `ENTRA_*` → `CA_*`**.
 
 | Problema | Causa provável | Solução |
 |----------|----------------|---------|
+| `/viewer` retorna 404 (na Vercel) | Framework Preset errado | Defina o preset como **Services** em Settings → Build and Deployment |
+| A página fica em "Verificando sua sessão…" e não sai | Backend fora do ar / `vercel dev` não rodou os 2 serviços | Rode pela **Opção A** (`vercel dev` na raiz) |
+| "Resultado do login não encontrado ou expirado" | Token expirou (10 min) ou o backend reiniciou | Clique em **Entrar novamente** para refazer o login |
+| O callback nunca chega (sem dados) | `CA_REDIRECT_URI` não bate com o registrado no CA | Ajuste a URI no CA e no `.env` (porta 3000 no `vercel dev`) |
 | `Internal Server Error` no login | Certificado SSL da CA interna não confiável no Python | Configure `CA_SSL_CERT_FILE` ou `CA_SSL_VERIFY=false` (só DSV) |
 | `command not found: uv` | `uv` não instalado | `pip install uv` |
-| Porta 8000 ocupada | Outro processo usando a porta | Encerre o processo ou troque a porta |
-| O callback nunca chega (sem dados no terminal) | `CA_REDIRECT_URI` não bate com o registrado no CA | Cadastre/ajuste a URI de callback no CA e no `.env` |
 | Consultas do Entra com `GRAPH_ACCESS_DENIED` (HTTP 403) | A app do Entra não tem permissão de **aplicação** no Graph | Conceda `User.Read.All` e `GroupMember.Read.All` (tipo Aplicação) com **admin consent** |
 | Consultas do Entra com `GRAPH_NOT_CONFIGURED` | Faltam as credenciais do Entra | Preencha `ENTRA_TENANT_ID` / `ENTRA_CLIENT_ID` / `ENTRA_CLIENT_SECRET` no `.env` |

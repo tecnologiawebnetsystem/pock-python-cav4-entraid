@@ -10,7 +10,7 @@ o CAv4 conseguiu obter do usuário (Entra + CAv4), retornando também um JSON.
 import logging
 import os
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import fastapi
@@ -105,6 +105,6 @@ async def health() -> dict[str, Any]:
     """Verifica se a API está funcionando."""
     return {
         "status": "ok",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": app.version,
     }

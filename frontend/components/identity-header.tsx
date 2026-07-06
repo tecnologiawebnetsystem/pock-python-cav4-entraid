@@ -10,9 +10,15 @@ interface Props {
 
 function getPhoto(endpoints: NormalizedEndpoint[]): string | null {
   const photo = endpoints.find((e) => e.label === 'graph_photo' && e.ok)
-  if (photo && typeof photo.data === 'string' && photo.data.startsWith('data:image/')) {
-    return photo.data
+  if (!photo) return null
+  const data = photo.data as unknown
+  // Formato do backend (graph_client): objeto { dataUri, contentType, sizeBytes }.
+  if (data && typeof data === 'object' && 'dataUri' in data) {
+    const uri = (data as { dataUri?: unknown }).dataUri
+    if (typeof uri === 'string' && uri.startsWith('data:image/')) return uri
   }
+  // Compatibilidade: caso algum dia a foto venha como string pura.
+  if (typeof data === 'string' && data.startsWith('data:image/')) return data
   return null
 }
 
