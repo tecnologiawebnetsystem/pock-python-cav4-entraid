@@ -1,11 +1,29 @@
-GUIA DE REIMPLEMENTAÇÃO — LOGIN CAv4/CA + ENTRA ID (MICROSOFT GRAPH)
-POC pock-python-cav4-entraid
+# Guia de reimplementação: CAv4/CA + Microsoft Entra ID
 
-Versão baseada na implementação existente em backend/auth.py, oidc.py, ca_client.py, graph_client.py e config.py.
+> **Projeto de referência:** `pock-python-cav4-entraid`  
+> **Objetivo:** permitir que outro desenvolvedor replique o login no CAv4, use a identidade retornada para consultar o CAv4 e, em paralelo, consulte dados do mesmo usuário no Microsoft Entra ID/Microsoft Graph.
 
-===============================================================================
-1. OBJETIVO E ARQUITETURA
-===============================================================================
+Este guia foi escrito a partir do código real da POC, principalmente `backend/auth.py`, `backend/oidc.py`, `backend/ca_client.py`, `backend/graph_client.py`, `backend/config.py`, `backend/session.py`, `frontend/app/page.tsx` e `frontend/next.config.ts`.
+
+## Navegação rápida
+
+- [Visão simples do fluxo](#1-visão-simples-do-fluxo)
+- [Arquitetura e arquivos](#2-arquitetura-e-arquivos)
+- [Endereços e callbacks](#4-endereços-e-callbacks)
+- [Variáveis de ambiente](#3-variáveis-de-ambiente)
+- [Passo a passo completo](#5-passo-a-passo-completo)
+- [Endpoints do CAv4](#6-endpoints-do-cav4)
+- [Endpoints do Entra ID e Graph](#7-endpoints-do-entra-id-e-graph)
+- [Permissões](#8-permissões)
+- [Front-end e rotas da POC](#9-front-end-e-rotas-da-poc)
+- [Erros, segurança e produção](#10-erros-segurança-e-produção)
+- [Checklist para outro projeto](#11-checklist-para-outro-projeto)
+
+> **Nota de nomenclatura:** neste documento, “EntryD” é tratado como **Microsoft Entra ID**. “K4”, no contexto desta POC, é tratado como **CAv4/CA**. O Graph é a API do Entra ID; ele não é o mesmo serviço que o CAv4.
+
+
+## 1. Visão simples do fluxo
+
 
 A POC executa um login OIDC no CA/Entra e, depois do retorno do usuário,
 realiza duas fases independentes:
@@ -33,12 +51,14 @@ Arquivos principais:
 - backend/config.py: variáveis de ambiente.
 - backend/session.py: state/nonce temporários e resultado temporário.
 
+## 3. Variáveis de ambiente
+
 IMPORTANTE: nunca copie client_secret para código-fonte, documentação pública ou
 repositório. Use variável de ambiente/Secrets Manager.
 
-===============================================================================
-2. VARIÁVEIS DE CONFIGURAÇÃO
-===============================================================================
+## 2. Arquitetura e arquivos
+
+
 
 Identidade da aplicação registrada no CA:
 - CA_CLIENT_ID: client ID público da aplicação.
@@ -69,9 +89,8 @@ A ordem de resolução das credenciais Graph é GRAPH_*; depois ENTRA_*; por fim
 CA_*. Reutilizar CA_* só é correto se a mesma app tiver permissões de aplicação
 no Graph e consentimento administrativo.
 
-===============================================================================
-2A. ENDEREÇOS OFICIAIS E CALLBACKS DESTA POC
-===============================================================================
+## 4. Endereços e callbacks
+
 
 Os endereços abaixo são os valores efetivamente configurados no arquivo
 backend/.env.example para o ambiente DSV. Eles não devem ser trocados por
@@ -105,8 +124,20 @@ A POC usa os endpoints públicos padrão do Microsoft Entra ID:
 - Scope usado no client_credentials:
   https://graph.microsoft.com/.default
 
-O {GRAPH_TENANT_ID} é o Directory (tenant) ID da organização. Não é o
+O `{GRAPH_TENANT_ID}` é o Directory (tenant) ID da organização. Não é o
 client ID e não deve ser substituído pelo nome do aplicativo.
+
+### Referências oficiais
+
+- [Microsoft identity platform — OAuth 2.0 authorization code](https://learn.microsoft.com/entra/identity-platform/v2-oauth2-auth-code-flow)
+- [Microsoft identity platform — client credentials](https://learn.microsoft.com/entra/identity-platform/v2-oauth2-client-creds-grant-flow)
+- [Microsoft Graph — usuários](https://learn.microsoft.com/graph/api/resources/user)
+- [Microsoft Graph — permissões](https://learn.microsoft.com/graph/permissions-reference)
+- [Microsoft Graph — grupos](https://learn.microsoft.com/graph/api/resources/group)
+
+Os endpoints privados do CAv4 dependem do ambiente corporativo e da documentação
+interna do CA. Por isso, os nomes formais dos scopes/roles do CAv4 não devem ser
+inventados: confirme-os com o time responsável pelo CAv4.
 
 2A.3 Callback registrado no CAv4
 
@@ -184,9 +215,8 @@ TLS opcional:
 - CA_SSL_CERT_FILE: bundle PEM da CA corporativa, se necessário.
 - CA_SSL_VERIFY=true. Não desabilitar em homologação/produção.
 
-===============================================================================
-3. FLUXO OIDC COMPLETO DO LOGIN
-===============================================================================
+## 5. Passo a passo completo do login
+
 
 Nota de nomenclatura: neste documento, “Entra ID” é o nome oficial do serviço
 que às vezes é chamado informalmente de “EntryD”. O CAv4/CA Petrobras é o
@@ -286,9 +316,8 @@ As claims usadas pela POC:
 Atenção: userLogin e UPN são identificadores diferentes. userLogin normalmente
 é matrícula/chave do CAv4; UPN normalmente é e-mail completo.
 
-===============================================================================
-4. ENDPOINTS CAv4 UTILIZADOS
-===============================================================================
+## 6. Endpoints do CAv4
+
 
 Todas as chamadas abaixo são GET, sem body, e enviam:
 Authorization: Bearer {access_token_da_troca_OIDC}
@@ -347,9 +376,8 @@ Resposta normalizada pela POC para cada consulta CAv4:
 Em caso de erro, data é substituído por error, contendo category, code,
 message, cause, resolution e, quando aplicável, detail.
 
-===============================================================================
-5. PERMISSÕES DO CAv4
-===============================================================================
+## 6.1 Permissões e autorização do CAv4
+
 
 O código confirma que o access_token do login é usado para acessar:
 - User API: user-groups e information-values.
@@ -379,9 +407,8 @@ Para migrar para outro projeto, confirme com o time do CAv4:
 - redirect URI cadastrada;
 - discovery URL e realm, se houver.
 
-===============================================================================
-6. ENDPOINTS ENTRA ID / MICROSOFT GRAPH UTILIZADOS
-===============================================================================
+## 7. Endpoints do Entra ID e Microsoft Graph
+
 
 A POC obtém um token separado pelo fluxo client_credentials.
 
@@ -467,9 +494,8 @@ O UPN é codificado preservando @ e . (safe="@.").
 Resposta normalizada pela POC para cada consulta Graph segue o mesmo formato
 de CAv4: endpoint, titulo, descricao, ok e data ou error.
 
-===============================================================================
-7. PERMISSÕES DO ENTRA ID / MICROSOFT GRAPH
-===============================================================================
+## 8. Permissões do Entra ID e Microsoft Graph
+
 
 A app registration usada pelo token client_credentials precisa de permissões de
 APLICAÇÃO (não Delegated), com admin consent concedido:
@@ -496,9 +522,8 @@ Não fazem parte desta POC:
 - AuditLog.Read.All para signInActivity/último login.
 - Permissões adicionais para outras APIs além das consultas descritas.
 
-===============================================================================
-8. ORQUESTRAÇÃO E FORMATO FINAL
-===============================================================================
+## 8.1 Orquestração e formato final
+
 
 Depois de validar o id_token:
 1. Extrai userLogin das claims para CAv4.
@@ -537,9 +562,8 @@ respostas Graph; o campo fonte do catálogo diferencia cada uma.
 O backend imprime claims e resultados no log. Em produção, avalie mascarar
 PII, tokens, e-mails, telefones e dados organizacionais antes de gravar logs.
 
-===============================================================================
-9. ROTAS DA PRÓPRIA POC
-===============================================================================
+## 9. Front-end e rotas da própria POC
+
 
 - GET /auth/login: inicia o login e redireciona ao authorization_endpoint.
 - GET /auth/entra-callback: recebe code/state, troca tokens, valida id_token,
@@ -552,9 +576,8 @@ Isso é adequado para POC, mas não para múltiplas instâncias em produção. P
 produção, usar armazenamento compartilhado para state/result e uma sessão
 segura com cookies HttpOnly/Secure/SameSite apropriado.
 
-===============================================================================
-10. CHECKLIST PARA OUTRO PROJETO
-===============================================================================
+## 11. Checklist para outro projeto
+
 
 [ ] Registrar a aplicação no CA e obter CA_CLIENT_ID/SECRET.
 [ ] Cadastrar CA_REDIRECT_URI exatamente igual à usada pelo novo sistema.
