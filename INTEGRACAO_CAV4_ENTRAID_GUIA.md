@@ -1,4 +1,4 @@
-# Guia de reimplementação: CAv4/CA + Microsoft Entra ID
+gens# Guia de reimplementação: CAv4/CA + Microsoft Entra ID
 
 > **Projeto de referência:** `pock-python-cav4-entraid`  
 > **Objetivo:** permitir que outro desenvolvedor replique o login no CAv4, use a identidade retornada para consultar o CAv4 e, em paralelo, consulte dados do mesmo usuário no Microsoft Entra ID/Microsoft Graph.
