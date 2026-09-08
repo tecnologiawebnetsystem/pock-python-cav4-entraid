@@ -69,6 +69,116 @@ A ordem de resolução das credenciais Graph é GRAPH_*; depois ENTRA_*; por fim
 CA_*. Reutilizar CA_* só é correto se a mesma app tiver permissões de aplicação
 no Graph e consentimento administrativo.
 
+===============================================================================
+2A. ENDEREÇOS OFICIAIS E CALLBACKS DESTA POC
+===============================================================================
+
+Os endereços abaixo são os valores efetivamente configurados no arquivo
+backend/.env.example para o ambiente DSV. Eles não devem ser trocados por
+endereços genéricos sem validar a conectividade e o cadastro da aplicação.
+
+2A.1 CAv4 / CA Petrobras
+
+Servidor OIDC do CA (autenticação, discovery, authorization e token):
+- RIC/rede interna/DSV: https://caauthz.petrobras.com.br
+- Discovery usado nesta POC:
+  https://caauthz.petrobras.com.br/.well-known/openid-configuration
+- DMZ/rede externa, quando aplicável: https://authz.petrobras.com.br
+
+Servidor REST do CAv4 (User API e Admin API):
+- RIC/rede interna/DSV usado nesta POC: https://fwca.petrobras.com.br
+- DMZ/rede externa, quando aplicável: https://fwca-apps.petrobras.com.br
+
+As rotas CAv4 são anexadas ao CA_API_BASE_URL. Portanto, nesta POC, por
+exemplo, a chamada final é:
+https://fwca.petrobras.com.br/api/users/{userLogin}/user-groups
+
+2A.2 Entra ID / Microsoft Graph (EntryD/Entra ID)
+
+A POC usa os endpoints públicos padrão do Microsoft Entra ID:
+- Authority para emissão do token app-only:
+  https://login.microsoftonline.com
+- Token endpoint final:
+  https://login.microsoftonline.com/{GRAPH_TENANT_ID}/oauth2/v2.0/token
+- API Graph:
+  https://graph.microsoft.com/v1.0
+- Scope usado no client_credentials:
+  https://graph.microsoft.com/.default
+
+O {GRAPH_TENANT_ID} é o Directory (tenant) ID da organização. Não é o
+client ID e não deve ser substituído pelo nome do aplicativo.
+
+2A.3 Callback registrado no CAv4
+
+Fluxo completo com frontend Next.js (recomendado para esta POC):
+- URL exata a cadastrar no CA: http://localhost:3000/auth/entra-callback
+- Variável: CA_REDIRECT_URI=http://localhost:3000/auth/entra-callback
+- Quem recebe inicialmente: o proxy/rewrite do frontend Next.js.
+- Destino real em desenvolvimento: backend FastAPI em
+  http://127.0.0.1:8000/auth/entra-callback.
+
+O Next.js encaminha /auth/* para o backend sem o prefixo /viewer. Assim, o CA
+continua vendo a URL pública http://localhost:3000/auth/entra-callback,
+mas o processamento ocorre no FastAPI na porta 8000.
+
+Fluxo somente backend, sem a tela /viewer:
+- URL alternativa: http://localhost:8000/auth/entra-callback
+- Nesse modo, defina CA_REDIRECT_URI com essa URL e cadastre-a também no CA.
+- Inicie o login em http://localhost:8000/auth/login.
+- Esse modo é útil para ver o JSON e os logs no terminal, mas não usa o
+  frontend Next.js.
+
+Callback pós-processamento para a tela:
+- VIEWER_PATH padrão no backend: /viewer
+- Redirecionamento final: /viewer?r={TOKEN}
+- URL completa no fluxo local: http://localhost:3000/viewer?r={TOKEN}
+- O TOKEN é temporário; não é um access token do CA nem do Graph.
+
+Importante: /auth/entra-callback é callback de BACKEND. O frontend não possui
+um callback OIDC próprio. A página frontend é /viewer; ela apenas inicia o
+login por /auth/login e lê o resultado em /auth/result/{TOKEN}.
+
+2A.4 Variáveis de ambiente do frontend
+
+O frontend não precisa de client ID, client secret, tenant ou token. Em
+ambiente local, ele usa:
+- BACKEND_ORIGIN: opcional; padrão http://127.0.0.1:8000.
+- basePath fixo: /viewer (definido em frontend/next.config.ts).
+
+O frontend acessa a mesma origem em http://localhost:3000 e o Next.js faz o
+proxy das rotas /auth/* e /health. Nunca coloque CA_CLIENT_SECRET,
+ENTRA_CLIENT_SECRET ou qualquer token em NEXT_PUBLIC_* ou no código React.
+
+2A.5 Variáveis de ambiente do backend
+
+Obrigatórias para CAv4/OIDC:
+- CA_CLIENT_ID
+- CA_CLIENT_SECRET
+- CA_REDIRECT_URI
+- OIDC_DISCOVERY_URL (recomendado) OU
+  OIDC_AUTHORIZATION_ENDPOINT + OIDC_TOKEN_ENDPOINT
+- CA_API_BASE_URL
+
+Recomendadas/segurança:
+- CA_SCOPES=openid profile
+- OIDC_VERIFY_SIGNATURE=true
+- CA_SSL_USE_TRUSTSTORE=true
+- CA_SSL_VERIFY=true
+- CA_SSL_CERT_FILE somente se for necessário informar um bundle PEM interno
+
+Obrigatórias para consultas independentes do Graph:
+- ENTRA_TENANT_ID (ou GRAPH_TENANT_ID)
+- ENTRA_CLIENT_ID (ou GRAPH_CLIENT_ID)
+- ENTRA_CLIENT_SECRET (ou GRAPH_CLIENT_SECRET)
+
+Padrões que normalmente podem permanecer inalterados:
+- GRAPH_API_BASE_URL=https://graph.microsoft.com/v1.0
+- GRAPH_AUTHORITY=https://login.microsoftonline.com
+- GRAPH_SCOPE=https://graph.microsoft.com/.default
+
+O backend também aceita CORS_ALLOW_ORIGINS e VIEWER_PATH. Elas são opcionais.
+CORS_ALLOW_ORIGINS só é necessário quando um navegador externo consumir a API.
+
 TLS opcional:
 - CA_SSL_USE_TRUSTSTORE=true.
 - CA_SSL_CERT_FILE: bundle PEM da CA corporativa, se necessário.
@@ -77,6 +187,23 @@ TLS opcional:
 ===============================================================================
 3. FLUXO OIDC COMPLETO DO LOGIN
 ===============================================================================
+
+Nota de nomenclatura: neste documento, “Entra ID” é o nome oficial do serviço
+que às vezes é chamado informalmente de “EntryD”. O CAv4/CA Petrobras é o
+servidor de autenticação que inicia o login e entrega as claims; o Microsoft
+Graph é consultado separadamente pelo backend usando as credenciais da app do
+Entra ID.
+
+URL completa do início do login nesta POC:
+- http://localhost:3000/auth/login no fluxo com frontend;
+- http://localhost:8000/auth/login no fluxo somente backend.
+
+URL que o navegador visita no final do login:
+- http://localhost:3000/viewer?r={TOKEN} no fluxo com frontend.
+
+O parâmetro r não é enviado ao CA nem ao Graph. Ele referencia o resultado
+temporário armazenado pelo backend e é removido da barra do navegador depois
+que a página carrega o resultado.
 
 3.1 GET /auth/login — início
 
