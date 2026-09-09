@@ -15,9 +15,9 @@ Este guia foi escrito a partir do código real da POC, principalmente `backend/a
 - [Endpoints do CAv4](#6-endpoints-do-cav4)
 - [Endpoints do Entra ID e Graph](#7-endpoints-do-entra-id-e-graph)
 - [Permissões](#8-permissões)
-- [Front-end e rotas da POC](#9-front-end-e-rotas-da-poc)
-- [Erros, segurança e produção](#10-erros-segurança-e-produção)
-- [Checklist para outro projeto](#11-checklist-para-outro-projeto)
+  - [Front-end e rotas](#9-front-end-e-rotas)
+  - [Erros, segurança e produção](#10-erros-segurança-e-produção)
+
 
 > **Nota de nomenclatura:** neste documento, “EntryD” é tratado como **Microsoft Entra ID**. “K4”, no contexto desta POC, é tratado como **CAv4/CA**. O Graph é a API do Entra ID; ele não é o mesmo serviço que o CAv4.
 
@@ -562,7 +562,7 @@ respostas Graph; o campo fonte do catálogo diferencia cada uma.
 O backend imprime claims e resultados no log. Em produção, avalie mascarar
 PII, tokens, e-mails, telefones e dados organizacionais antes de gravar logs.
 
-## 9. Front-end e rotas da própria POC
+## 9. Front-end e rotas
 
 
 - GET /auth/login: inicia o login e redireciona ao authorization_endpoint.
@@ -575,30 +575,5 @@ O resultado e o state ficam em memória e expiram em aproximadamente 10 minutos.
 Isso é adequado para POC, mas não para múltiplas instâncias em produção. Para
 produção, usar armazenamento compartilhado para state/result e uma sessão
 segura com cookies HttpOnly/Secure/SameSite apropriado.
-
-## 11. Checklist para outro projeto
-
-
-[ ] Registrar a aplicação no CA e obter CA_CLIENT_ID/SECRET.
-[ ] Cadastrar CA_REDIRECT_URI exatamente igual à usada pelo novo sistema.
-[ ] Confirmar OIDC_DISCOVERY_URL, realm/issuer, token endpoint e JWKS URI.
-[ ] Confirmar scopes OIDC, incluindo openid e profile.
-[ ] Confirmar com o time do CAv4 os scopes/roles formais para User API.
-[ ] Confirmar autorização formal para cada endpoint Admin.
-[ ] Implementar Authorization Code + PKCE S256, state e nonce.
-[ ] Extrair userLogin/matrícula das claims para o CAv4.
-[ ] Extrair UPN/e-mail completo das claims para o Graph.
-[ ] Registrar app Entra para acesso app-only ao Graph.
-[ ] Adicionar User.Read.All como Application permission.
-[ ] Adicionar GroupMember.Read.All como Application permission.
-[ ] Conceder admin consent.
-[ ] Guardar tenant, client ID e secret em variáveis seguras.
-[ ] Obter Graph token com client_credentials e scope .default.
-[ ] Enviar Bearer correto para cada API; não misturar os tokens.
-[ ] Codificar userLogin e UPN no path.
-[ ] Tratar 401, 403, 404 e expiração individualmente.
-[ ] Não expor access_token, client_secret ou id_token ao navegador.
-[ ] Revisar logs para evitar vazamento de PII e dados sensíveis.
-[ ] Testar em DSV antes de homologação/produção.
 
 FIM DO DOCUMENTO
