@@ -33,7 +33,7 @@ const nextConfig: NextConfig = {
   // uvicorn (porta 8000). Assim tudo fica na MESMA origem (localhost:3000),
   // que é o necessário para o fluxo de login OAuth funcionar. `basePath: false`
   // mantém essas rotas na raiz (fora do prefixo /viewer). Em produção (Vercel)
-  // isto NÃO é usado — lá o roteamento vem do vercel.json / experimentalServices.
+  // isto NÃO é usado — lá o roteamento vem do vercel.json / services.
   async rewrites() {
     if (!isDev) return []
     return [
