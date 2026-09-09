@@ -215,6 +215,55 @@ TLS opcional:
 - CA_SSL_CERT_FILE: bundle PEM da CA corporativa, se necessário.
 - CA_SSL_VERIFY=true. Não desabilitar em homologação/produção.
 
+## 5. Fluxo visual: Login, CAv4, Entra ID e callback
+
+O diagrama abaixo resume a sequência principal da POC. O navegador inicia o login no backend; o CAv4 autentica o usuário e devolve o código ao callback; depois disso, o backend usa os dados recebidos para consultar o CAv4 e o Microsoft Graph com tokens distintos.
+
+```text
+[Usuário / Front-end]
+          |
+          | GET /auth/login
+          v
+[Backend FastAPI]
+          |
+          | Authorization Code + PKCE
+          v
+[CAv4 / OIDC]
+          |
+          | GET /auth/entra-callback?code=...&state=...
+          v
+[Backend valida state, nonce e troca code por tokens]
+          |
+          +--> CAv4 User/Admin API
+          |    GET /api/users/{userLogin}/...
+          |
+          +--> Entra ID Token Endpoint
+          |    POST /{tenant}/oauth2/v2.0/token
+          |    grant_type=client_credentials
+          |            |
+          |            v
+          |       Microsoft Graph
+          |       GET /v1.0/users/{upn}/...
+          |
+          v
+[Resultado consolidado] --> /viewer?r={TOKEN}
+```
+
+### Leitura rápida do fluxo
+
+1. O usuário acessa o front-end e escolhe iniciar o login.
+2. O backend cria `state`, `nonce` e `code_verifier` e redireciona para o CAv4.
+3. O CAv4 autentica o usuário e retorna `code` e `state` ao callback.
+4. O backend troca o `code` por tokens e valida o `id_token`.
+5. O backend extrai `userLogin` para as APIs do CAv4 e UPN/e-mail para o Graph.
+6. As consultas são executadas separadamente e o resultado é exibido no front-end.
+
+### Separação de tokens
+
+- **Token do CAv4:** usado somente nas APIs do CAv4.
+- **Token app-only do Graph:** obtido com `client_credentials` e usado somente no Microsoft Graph.
+- **Token temporário `r`:** apenas referencia o resultado armazenado no backend; não é token de autenticação.
+
 ## 5. Passo a passo completo do login
 
 
