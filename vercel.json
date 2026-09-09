@@ -1,12 +1,41 @@
 {
   "services": {
     "frontend": {
-      "entrypoint": "frontend",
-      "routePrefix": "/viewer"
+      "root": "frontend"
     },
     "backend": {
-      "entrypoint": "backend/main.py",
-      "routePrefix": "/"
+      "root": "backend",
+      "entrypoint": "main.py"
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/auth/:path*",
+      "destination": {
+        "service": "backend",
+        "path": "/auth/:path*"
+      }
+    },
+    {
+      "source": "/health",
+      "destination": {
+        "service": "backend",
+        "path": "/health"
+      }
+    },
+    {
+      "source": "/viewer/:path*",
+      "destination": {
+        "service": "frontend",
+        "path": "/viewer/:path*"
+      }
+    },
+    {
+      "source": "/viewer",
+      "destination": {
+        "service": "frontend",
+        "path": "/viewer"
+      }
+    }
+  ]
 }
